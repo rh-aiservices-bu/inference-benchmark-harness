@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "inference-benchmark-harness"
 version = "0.1.0"
 description = "Bounded AIPerf experiments with explicit evidence and recovery"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "Apache-2.0"
 dependencies = []
 

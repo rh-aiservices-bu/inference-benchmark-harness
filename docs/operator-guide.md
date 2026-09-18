@@ -209,7 +209,7 @@ make test-container IMAGE=inference-benchmark-harness:0.1.0 TEST_ARTIFACTS=/path
 
 Results must be writable by UID 10001. Adapt [the Job example](../examples/job.yaml) to an approved image and existing input/output PVCs. It uses no API token, requires no GPU and disables Job retries. The default image contains no kubectl: enable Kubernetes checks only in an environment providing kubectl and the required read permissions. Check sidecar completion, CA trust and network policy. Preserve required mutual TLS.
 
-If the base image is unavailable or unapproved, rebuild on an approved Python 3.11+ Linux base or install in an approved virtual environment. Match builder/runtime libraries, registry and dependency mirror. Rerun unit tests, fixture integration, verify and smoke. A different image requires qualification, not just a changed `FROM` line. The example does not imply organizational approval.
+If the base image is unavailable or unapproved, rebuild on an approved Python 3.11–3.13 Linux base or install in an approved virtual environment. Match builder/runtime libraries, registry and dependency mirror. Rerun unit tests, fixture integration, verify and smoke. A different image requires qualification, not just a changed `FROM` line. The example does not imply organizational approval.
 
 ## Recovery
 
@@ -259,6 +259,7 @@ Inspect route `parentRefs`, host/path matches, filters and acceptance. Use the r
 | Required name missing | `metric_names`, `missing`, producer URL and actual exporter version | If the new name has equivalent meaning, edit `metrics[].required[].metric`. Keep `why`. A changed config starts a new run. |
 | Metric exists for wrong model/pod | Producer identity, source labels, collection filters | Correct the target or selector. A matching name alone does not establish attribution. |
 | Units or histogram changed | Source type/unit and monitoring ingestion mapping | Correct the conversion/query. Do not fix a semantic mismatch with a name-only alias. |
+| HTTP redirect (301/302/303/307/308) | Configured model-list or metric URL | Preflight refuses redirects, including login redirects, to keep credentials and observations on the approved target. Configure its direct URL with the serving owner. |
 | HTTP 401/403 or TLS failure | Identity, certificate trust and approved route | Correct access. Inference bearer credentials do not configure metric-producer authentication. |
 | Monitoring samples missing/stale | Collector status, ingestion lag, query filters and exact run window | Missing is not zero. Hold claims needing that evidence. Direct collection can be used when approved. |
 | Model-list 404 | Gateway routes and `endpoint.models_path` | If listing is intentionally absent, set it to null. Verify the served model using smoke and server evidence. No KServe dependency is assumed. |
