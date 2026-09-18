@@ -11,6 +11,7 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 | Get a first test running | [Daniel's standalone AIPerf guide](https://github.com/dandawg/llm-d-flow-control-demo/blob/main/benchmarks/standalone-guide.md). His [demo repository](https://github.com/dandawg/llm-d-flow-control-demo) also provides a deployment scaffold |
 | Run repeatable experiments | This harness checks inputs, runs isolated or mixed workloads, repeats measurements and preserves evidence |
 | Understand the shared-GPU business case and prior experiments | [Alexa's decision guide](https://alexagriffith.github.io/flow-control-benchmarks/benchmark-decision-map/) and [benchmark repository](https://github.com/alexagriffith/flow-control-benchmarks) cover experiment choices, prior results and their evidence limits |
+| View saved progress or replay an experiment | [Flow Control Flight Recorder](https://github.com/alexagriffith/flow-control-visualizer) is a separate, read-only companion; its README explains the supported inputs |
 | Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
 
 ## Install and configure
