@@ -15,7 +15,7 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 
 ## Install and configure
 
-Python 3.11+ on Linux or macOS. AIPerf is pinned to 0.12.0.
+Python **3.11–3.13**, Git and Make on Linux or macOS. AIPerf is pinned to 0.12.0 and does not support Python 3.14. Use a supported interpreter for `python3` below. Replace `/path/benchmark.json` with a filename in an existing private directory.
 
 ```sh
 git clone https://github.com/rh-aiservices-bu/inference-benchmark-harness.git
@@ -41,6 +41,8 @@ The example allows **20 requests or 60 seconds per repeat**, with a 30-second re
 
 ## Run
 
+One benchmark config is enough. Verification and smoke come first; no matrix or latency goal is required.
+
 From the checkout, replace `/path/...` with your config and durable output paths. Complete each check before the next step. Preserve failures and use [debugging](docs/operator-guide.md#debugging) if a command fails.
 
 1. Preview the smoke command and budget. Confirm the endpoint and inputs.
@@ -49,7 +51,7 @@ From the checkout, replace `/path/...` with your config and durable output paths
    make plan-smoke CONFIG=/path/benchmark.json RUN=/path/results/smoke
    ```
 
-2. Verify access, runtime and required metrics. Continue only when the result is `ready_for_smoke`.
+2. Verify runtime and configured access/metrics checks. Continue when the result is `ready_for_smoke`, after reviewing any `unverified` checks. Empty `metrics` skips collection checks; no model-list API means smoke must confirm inference access.
 
    ```sh
    make verify CONFIG=/path/benchmark.json
@@ -59,6 +61,7 @@ From the checkout, replace `/path/...` with your config and durable output paths
 
    ```sh
    make smoke CONFIG=/path/benchmark.json RUN=/path/results/smoke
+   make report RUN=/path/results/smoke
    ```
 
 4. Preview the measured sweep, then execute the reviewed budget in a separate directory.
@@ -74,7 +77,7 @@ From the checkout, replace `/path/...` with your config and durable output paths
    make report RUN=/path/results/sweep
    ```
 
-`make help` lists commands. Plans send no traffic or network requests. `verify` reads endpoints but sends no inference. `benchmark` is an alias for `sweep`.
+`make help` lists commands. Plans send no traffic or network requests. `verify` reads endpoints but sends no inference. `benchmark` is an alias for `sweep`. Preflight requires direct endpoint URLs and refuses redirects, including login redirects.
 
 The example uses **three valid repeats per point**. Invalid evidence stops immediately. A valid goal miss or request error is retained. Remaining repeats at that point finish before higher load is stopped. Inference is never automatically retried. See [recovery](docs/operator-guide.md#recovery) before using `make resume CONFIG=/path/benchmark.json RUN=/path/results/sweep`.
 
@@ -89,6 +92,8 @@ make matrix-plan MATRIX=/path/matrix.json RUN=/path/results/matrix
 make matrix-run MATRIX=/path/matrix.json RUN=/path/results/matrix
 make report RUN=/path/results/matrix
 ```
+
+Every stream uses the same verify/smoke preparation before coordinated load.
 
 `matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). If a crash interrupts finalization after the last row, resume verifies accepted evidence and finalizes the status without replaying traffic.
 

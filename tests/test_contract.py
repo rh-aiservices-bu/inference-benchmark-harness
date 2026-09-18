@@ -423,13 +423,13 @@ class ContractTests(unittest.TestCase):
         self.assertIn("stopped_before_request_or_time_limit", result["reasons"])
 
     def test_authentication_errors_are_not_retried(self):
-        with patch("bench.preflight.urlopen", side_effect=HTTPError("http://localhost", 401, "Unauthorized", {}, None)) as request:
+        with patch("bench.preflight._http.open", side_effect=HTTPError("http://localhost", 401, "Unauthorized", {}, None)) as request:
             with self.assertRaisesRegex(ValueError, "HTTP 401"):
                 fetch("http://localhost")
         self.assertEqual(request.call_count, 1)
 
     def test_transient_read_retries_are_bounded(self):
-        with patch("bench.preflight.urlopen", side_effect=HTTPError("http://localhost", 503, "Unavailable", {}, None)) as request:
+        with patch("bench.preflight._http.open", side_effect=HTTPError("http://localhost", 503, "Unavailable", {}, None)) as request:
             with patch("bench.preflight.time.sleep") as sleep:
                 with self.assertRaisesRegex(ValueError, "HTTP 503"):
                     fetch("http://localhost")

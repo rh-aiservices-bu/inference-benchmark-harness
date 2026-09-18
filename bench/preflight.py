@@ -6,23 +6,35 @@ import re
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from . import AIPERF_VERSION
 from .provenance import observed, operation, timestamp
+
+
+class NoRedirects(HTTPRedirectHandler):
+    """Keep credentials and observations on the explicitly configured endpoint."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_http = build_opener(NoRedirects())
 
 
 @observed("http_acquisition")
 def fetch(url, headers=None):
     for attempt in range(3):
         try:
-            with urlopen(Request(url, headers=headers or {}), timeout=10) as response:
+            with _http.open(Request(url, headers=headers or {}), timeout=10) as response:
                 data = response.read(8 * 1024 * 1024 + 1)
             if len(data) > 8 * 1024 * 1024:
                 raise ValueError("Read exceeded 8 MiB")
             return data.decode(), attempt + 1
         except HTTPError as exc:
             exc.close()
+            if exc.code in (301, 302, 303, 307, 308):
+                raise ValueError(f"HTTP {exc.code}; redirects are disabled; configure the approved direct endpoint") from None
             if exc.code not in (502, 503, 504) or attempt == 2:
                 raise ValueError(f"HTTP {exc.code}; verify endpoint, access and service health") from None
         except (URLError, TimeoutError, ConnectionError):
