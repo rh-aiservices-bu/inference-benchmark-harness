@@ -213,7 +213,7 @@ If the base image is unavailable or unapproved, rebuild on an approved Python 3.
 
 ## Recovery
 
-A crash after the last matrix row is saved but before finalization can leave all repeats accepted with status `ready`. Resume does not currently finalize this state. Preserve the files and follow [issue #1](https://github.com/rh-aiservices-bu/inference-benchmark-harness/issues/1). Do not rerun the experiment just to obtain a `complete` status.
+If a crash leaves the last matrix row saved with status `ready`, use `matrix-resume` with unchanged inputs. It verifies accepted evidence and finalizes the status without sending traffic. Earlier goal misses and request errors remain in the final status.
 
 | Condition | Automatic behavior | Operator action |
 |---|---|---|
@@ -317,6 +317,34 @@ This section owns the experiment sequence and reasons. Configuration files own r
 
 For each manual next-step decision, retain the prior run/point, observed metrics with units, changed field/value, reason or rule, UTC time and decision owner beside the run evidence. “Insufficient evidence” is a valid conclusion. V1 does not automatically author these takeaways or accept decision metadata as benchmark config fields. When a supported option changes, update its validator, relevant behavior test and this guide together. Rerun the documented plan examples.
 
+
+## Generate a matrix
+
+First configure one workload file per stream: endpoint, prompts, goals, metrics and request/time budgets. The generator changes only the load axis. It keeps the other inputs in those files.
+
+```sh
+python -m bench matrix-create --output /path/mixed.json --name background-sweep \
+  --question "Does background demand delay interactive responses?" \
+  --stream interactive=/path/interactive.json \
+  --stream background=/path/background.json \
+  --sweep background --axis rates --values 0.5,1,2 \
+  --hold interactive=0.5 --max-concurrency 4 --repeats 3
+make matrix-plan MATRIX=/path/mixed.json RUN=/path/results/mixed
+```
+
+The Make wrapper accepts the same options: `make matrix-create ARGS='--output /path/baseline.json --name baseline --question "How does interactive load behave?" --stream interactive=/path/interactive.json --sweep interactive --axis concurrency --values 1,2,4'`.
+
+This holds interactive traffic at 0.5 requests/s and sweeps background traffic through 0.5, 1 and 2 requests/s. It generates three rows with three repeats each. These values are examples, not capacity recommendations. Both streams inherit their own request/time limits. The shared arrival window must meet the overlap requirement.
+
+- Add each workload with `--stream NAME=CONFIG`. Paths are relative to the current directory. The output stores references relative to the matrix file.
+- Choose one `--sweep` and give every other stream a fixed `--hold NAME=VALUE`.
+- Use `--axis concurrency --values 1,2,4` for closed loop. Omit rate-only options. A single stream needs no `--hold`.
+- Rate mode requires `--max-concurrency`. Arrival defaults to constant; choose `--arrival poisson` for random gaps.
+- Defaults: three repeats, three allowed attempts per repeat, five seconds of shared arrival overlap. Set `--max-attempts-per-repeat` and `--min-overlap-seconds` to change those limits.
+
+The command validates all referenced configs and prints the expanded request budget. It never overwrites a file, sends traffic, runs a policy observer or chooses detector settings. The output directory must exist. Keep the matrix and workload files together when transferring them. Review the plan, then use `make matrix-run MATRIX=/path/mixed.json RUN=/path/results/mixed`.
+
+To change the experiment, generate a new matrix and use a new result directory. Edit JSON for multiple stages, Cartesian-product sweeps or reviewed policy profiles. AI can help propose those choices, but validation and execution use the same deterministic commands. Full CLI help: `python -m bench matrix-create --help`.
 
 ## Matrix configuration
 

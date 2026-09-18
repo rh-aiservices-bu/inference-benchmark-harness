@@ -170,8 +170,6 @@ def matrix_campaign(config, root, aiperf, resume=False, config_acquisition=None)
                 write_json(root / "config.json", config)
                 state = {"kind": "matrix", "config_hash": identity, "status": "ready", "next_row": 0,
                          "next_repeat": 0, "completed": [], "outcomes": {}}
-            if state["next_row"] == len(config["rows"]):
-                return state
             for index in range(state["next_row"], len(config["rows"])):
                 row = config["rows"][index]
                 for repeat in range(state["next_repeat"], config["repeats"]):
@@ -243,7 +241,9 @@ def matrix_campaign(config, root, aiperf, resume=False, config_acquisition=None)
                 if state["status"] != "ready":
                     return state
             outcomes = state["outcomes"].values()
-            state["status"] = "goal_not_met" if "goal_not_met" in outcomes else "request_errors" if "request_errors" in outcomes else "complete"
-            write_json(root / "state.json", state)
-            event(root, "matrix_complete", groups=len(state["completed"]))
+            status = "goal_not_met" if "goal_not_met" in outcomes else "request_errors" if "request_errors" in outcomes else "complete"
+            if state["status"] != status:
+                state["status"] = status
+                write_json(root / "state.json", state)
+                event(root, "matrix_complete", groups=len(state["completed"]))
             return state

@@ -10,7 +10,7 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 |---|---|
 | Get a first test running | [Daniel's standalone AIPerf guide](https://github.com/dandawg/llm-d-flow-control-demo/blob/main/benchmarks/standalone-guide.md). His [demo repository](https://github.com/dandawg/llm-d-flow-control-demo) also provides a deployment scaffold |
 | Run repeatable experiments | This harness checks inputs, runs isolated or mixed workloads, repeats measurements and preserves evidence |
-| Understand the shared-GPU business case and prior experiments | [Alexa's flow-control benchmarks](https://github.com/alexagriffith/flow-control-benchmarks) document scenarios, results and their evidence limits |
+| Understand the shared-GPU business case and prior experiments | [Alexa's decision guide](https://alexagriffith.github.io/flow-control-benchmarks/benchmark-decision-map/) and [benchmark repository](https://github.com/alexagriffith/flow-control-benchmarks) cover experiment choices, prior results and their evidence limits |
 | Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
 
 ## Install and configure
@@ -80,7 +80,9 @@ The example uses **three valid repeats per point**. Invalid evidence stops immed
 
 ## Several workloads or experiments
 
-Copy `examples/matrix.json`, `benchmark.json` and `background.json` together. Edit their endpoint, workload and budgets. The matrix runs each row's streams together and checkpoints whole repeats.
+Generate a matrix with [`make matrix-create`](docs/operator-guide.md#generate-a-matrix) using named workload configs and explicit load values. No AI or JSON editing is required for a single-axis sweep. The generator validates the file, prints its request budget and sends no traffic.
+
+For custom multi-stage or policy experiments, copy `examples/matrix.json`, `benchmark.json` and `background.json` together. Edit their endpoint, workload and budgets. The matrix runs each row's streams together and checkpoints whole repeats.
 
 ```sh
 make matrix-plan MATRIX=/path/matrix.json RUN=/path/results/matrix
@@ -88,7 +90,7 @@ make matrix-run MATRIX=/path/matrix.json RUN=/path/results/matrix
 make report RUN=/path/results/matrix
 ```
 
-`matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). A [known final-checkpoint recovery issue](https://github.com/rh-aiservices-bu/inference-benchmark-harness/issues/1) can leave a finished matrix at `ready` after a crash. Preserve its evidence instead of replaying traffic.
+`matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). If a crash interrupts finalization after the last row, resume verifies accepted evidence and finalizes the status without replaying traffic.
 
 ## Scope and evidence
 

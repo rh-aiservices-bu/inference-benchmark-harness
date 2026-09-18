@@ -37,12 +37,29 @@ def main():
         if name == "matrix-run":
             child.add_argument("--execute", action="store_true", required=True)
             child.add_argument("--resume", action="store_true")
+    create = sub.add_parser("matrix-create", help="Generate and validate one load sweep without traffic")
+    create.add_argument("--output", required=True, help="New matrix file; never overwrites")
+    create.add_argument("--name", required=True, help="Short lowercase experiment name")
+    create.add_argument("--question", required=True, help="Question this experiment answers")
+    create.add_argument("--stream", action="append", required=True, metavar="NAME=CONFIG", help="Repeat for each workload config; paths relative to current directory")
+    create.add_argument("--sweep", required=True, help="Stream whose load changes")
+    create.add_argument("--values", required=True, help="Comma-separated load points, in execution order")
+    create.add_argument("--hold", action="append", default=[], metavar="NAME=VALUE", help="One fixed load for every other stream")
+    create.add_argument("--axis", choices=("concurrency", "rates"), required=True)
+    create.add_argument("--arrival", choices=("constant", "poisson"))
+    create.add_argument("--max-concurrency", type=int)
+    create.add_argument("--repeats", type=int, default=3)
+    create.add_argument("--max-attempts-per-repeat", type=int, default=3)
+    create.add_argument("--min-overlap-seconds", type=float, default=5)
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
     try:
-        if args.action == "matrix-pause":
+        if args.action == "matrix-create":
+            from .generate import create_matrix
+            result = create_matrix(args)
+        elif args.action == "matrix-pause":
             from .evidence import write_json
             root = Path(args.run).resolve()
             state = json.loads((root / "state.json").read_text())

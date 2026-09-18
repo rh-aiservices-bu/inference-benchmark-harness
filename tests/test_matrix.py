@@ -59,6 +59,35 @@ class MatrixTests(unittest.TestCase):
             self.assertEqual(again, state)
             self.assertEqual(len(self.calls), 12)
 
+    def test_final_row_checkpoint_resume_finalizes_without_traffic(self):
+        for outcome in ('ready', 'goal_not_met', 'request_errors'):
+            with self.subTest(outcome=outcome):
+                config = self.save()
+                root = (self.root / outcome).resolve()
+                def group(*args, **kwargs):
+                    result = self.group(*args, **kwargs)
+                    if len(self.calls) <= config['repeats']:
+                        result['outcome'] = outcome
+                    return result
+                def crash_after_last_row(path, value):
+                    write_json(path, value)
+                    if path == root / 'state.json' and value.get('next_row') == len(config['rows']):
+                        raise RuntimeError('crash after durable last-row checkpoint')
+                self.calls.clear()
+                with patch('bench.mixed.execute_group', side_effect=group):
+                    with patch('bench.matrix.write_json', side_effect=crash_after_last_row):
+                        with self.assertRaisesRegex(RuntimeError, 'last-row checkpoint'):
+                            matrix_campaign(config, root, 'aiperf')
+                            matrix_campaign(config, root, 'aiperf', True)
+                saved = json.loads((root / 'state.json').read_text())
+                self.assertEqual(saved['next_row'], len(config['rows']))
+                with patch('bench.mixed.execute_group', side_effect=AssertionError('traffic replayed')):
+                    resumed = matrix_campaign(config, root, 'aiperf', True)
+                    self.assertEqual(resumed['status'], 'complete' if outcome == 'ready' else outcome)
+                    self.assertEqual(resumed['completed'], saved['completed'])
+                    self.assertEqual(resumed, json.loads((root / 'state.json').read_text()))
+                    self.assertEqual(matrix_campaign(config, root, 'aiperf', True), resumed)
+
     def test_failed_peer_replaces_entire_group_and_preserves_first(self):
         self.spec['stages'] = [self.spec['stages'][1]]
         config = self.save()

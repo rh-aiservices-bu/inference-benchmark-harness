@@ -9,6 +9,7 @@ MATRIX ?= examples/matrix.json
 
 .PHONY: benchmark help plan plan-smoke verify smoke sweep resume report test test-integration resume-smoke image test-container
 help:
+	@echo 'matrix-create    Generate a validated matrix; pass CLI options in ARGS'
 	@echo 'matrix-plan      Preview named experiments, concurrent streams and total budget'
 	@echo 'matrix-run       Run MATRIX, checkpointing whole mixed repeats'
 	@echo 'matrix-resume    Resume MATRIX after diagnosing the saved stop reason'
@@ -71,3 +72,7 @@ test-container:
 	  -v "$(CURDIR)/examples:/opt/harness/examples:ro" \
 	  -v "$(abspath $(TEST_ARTIFACTS)):/results:rw" -e TMPDIR=/results \
 	  --entrypoint python "$(IMAGE)" -c 'import os, subprocess, sys; os.access("/results", os.W_OK) or sys.exit("TEST_ARTIFACTS must be writable by container UID 10001; choose an approved writable directory"); subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"], check=True); subprocess.run([sys.executable, "tests/integration.py", "--aiperf", "/opt/venv/bin/aiperf"], check=True); subprocess.run([sys.executable, "tests/integration_matrix.py", "--aiperf", "/opt/venv/bin/aiperf"], check=True)'
+
+.PHONY: matrix-create
+matrix-create:
+	$(PYTHON) -m bench matrix-create $(ARGS)
