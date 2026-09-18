@@ -1,5 +1,6 @@
 """Run isolated points and keep every attempt, including failures."""
 
+import errno
 import fcntl
 import copy
 import json
@@ -13,6 +14,7 @@ import time
 from .config import attempt_limit, attempt_prefix, file_digest, fingerprint, load_points, phase, repeat_count
 from .evidence import analyze, manifest, write_json
 from .preflight import verify
+from .processes import nonrunning_darwin_group
 from .provenance import artifact, operation, record, recording, timestamp
 
 
@@ -61,6 +63,7 @@ def event(root, code, **fields):
 def run_child(args, directory, deadline, lock_fd):
     process = None
     code, reason = 1, None
+    cleanup_observations = []
     started = timestamp()
     clock = time.monotonic_ns()
     try:
@@ -82,9 +85,15 @@ def run_child(args, directory, deadline, lock_fd):
                 except ProcessLookupError:
                     pass
                 except OSError as exc:
-                    code, reason = 125, "cleanup_failed"
-                    record("cleanup_failed", process_id=process.pid, signal=stop_signal,
-                           error_type=type(exc).__name__, errno=exc.errno)
+                    probe = {}
+                    inactive = exc.errno == errno.EPERM and nonrunning_darwin_group(process.pid, probe)
+                    observation = {"signal": int(stop_signal), "errno": exc.errno,
+                                   "group_probe": probe,
+                                   "status": "no_live_group_members" if inactive else "failed"}
+                    cleanup_observations.append(observation)
+                    record("cleanup_observation", process_id=process.pid, **observation)
+                    if not inactive:
+                        code, reason = 125, "cleanup_failed"
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -95,7 +104,7 @@ def run_child(args, directory, deadline, lock_fd):
         artifact(directory / "aiperf.log", capture_window={"started": started, "finished": finished})
     return {"start_unix": started["timestamp_ns"] / 1e9, "end_unix": finished["timestamp_ns"] / 1e9,
             "started": started, "finished": finished, "duration_ns": time.monotonic_ns() - clock,
-            "exit_code": code, "reason": reason}
+            "exit_code": code, "reason": reason, "cleanup_observations": cleanup_observations}
 
 
 def campaign(config, root, aiperf, resume=False, config_acquisition=None):

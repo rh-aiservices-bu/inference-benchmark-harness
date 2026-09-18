@@ -115,8 +115,9 @@ def plan_matrix(config, root, aiperf):
     return {"status": "plan_only", "name": config["name"], "rows": len(config["rows"]),
             "repeats_per_row": config["repeats"], "max_requests_first_pass": budget,
             "max_requests_with_manual_retries": budget * config["max_attempts_per_repeat"],
-            "automatic_inference_retries": 0,
+            "automatic_inference_retries": 0, "min_overlap_seconds": config["min_overlap_seconds"],
             "experiments": [{**{k: row[k] for k in ("stage", "question", "change", "profile")},
+                             "budgets": {name: {key: c["load"][key] for key in ("requests", "duration_seconds", "request_timeout_seconds", "grace_seconds", "deadline_seconds")} for name, c in row["streams"].items()},
                              "streams": {name: command(c, load_points(c)[0], Path(root) / f"row-{i+1:03d}" / name, aiperf)
                                          for name, c in row["streams"].items()}}
                             for i, row in enumerate(config["rows"])],
@@ -217,6 +218,8 @@ def matrix_campaign(config, root, aiperf, resume=False, config_acquisition=None)
                                 for summary in result.get(collection, {}).values():
                                     for goal in summary.get("goals", []):
                                         goal["status"] = "unverified"
+                        if result["evidence"] != "complete":
+                            result["outcome"] = "invalid"
                         write_json(directory / "summary.json", result)
                         write_json(directory / "manifest.json", manifest(directory))
                     except KeyboardInterrupt:

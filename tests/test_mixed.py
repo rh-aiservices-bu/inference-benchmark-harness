@@ -15,7 +15,8 @@ from unittest.mock import patch
 
 from bench.config import load
 from bench.evidence import manifest, write_json
-from bench.mixed import _execute, _nonrunning_darwin_group, execute_group, shared_window_summary
+from bench.mixed import _execute, execute_group, shared_window_summary
+from bench.processes import nonrunning_darwin_group
 from bench.provenance import recording
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,8 @@ class MixedTests(unittest.TestCase):
             result = execute_group(self.streams, self.root, "unused", self.lock.fileno(), .1)
         self.assertEqual(result["evidence"], "invalid")
         self.assertIn("insufficient_arrival_overlap", result["reasons"])
+        self.assertEqual(result["outcome"], "invalid")
+        self.assertIn("min_overlap_seconds", result["action"])
         self.assertTrue(all(s["evidence"] == "complete" for s in result["streams"].values()))
 
     @patch("bench.mixed.verify", return_value=[])
@@ -272,13 +275,13 @@ class MixedTests(unittest.TestCase):
                     pass
 
     def test_darwin_group_probe_requires_no_live_members(self):
-        with patch("bench.mixed.sys.platform", "darwin"):
+        with patch("bench.processes.sys.platform", "darwin"):
             for output, expected in (("123 Z\n123 Z+\n", True), ("124 S\n", True),
                                      ("123 Z\n123 S\n", False)):
-                with self.subTest(output=output), patch("bench.mixed.subprocess.run", return_value=subprocess.CompletedProcess([], 0, output)):
-                    self.assertEqual(_nonrunning_darwin_group(123), expected)
-            with patch("bench.mixed.subprocess.run", side_effect=subprocess.TimeoutExpired("ps", 2)):
-                self.assertFalse(_nonrunning_darwin_group(123))
+                with self.subTest(output=output), patch("bench.processes.subprocess.run", return_value=subprocess.CompletedProcess([], 0, output)):
+                    self.assertEqual(nonrunning_darwin_group(123), expected)
+            with patch("bench.processes.subprocess.run", side_effect=subprocess.TimeoutExpired("ps", 2)):
+                self.assertFalse(nonrunning_darwin_group(123))
 
     def test_permission_denied_cleanup_remains_fatal_for_live_group(self):
         directories = self.process_setup()
@@ -286,7 +289,7 @@ class MixedTests(unittest.TestCase):
         process.poll.return_value = 0
         with patch("bench.mixed.subprocess.Popen", return_value=process), \
              patch("bench.mixed.os.killpg", side_effect=PermissionError(errno.EPERM, "denied")), \
-             patch("bench.mixed._nonrunning_darwin_group", return_value=False):
+             patch("bench.mixed.nonrunning_darwin_group", return_value=False):
             execution, reason = _execute({"interactive": ["unused"]}, self.streams, directories, self.lock.fileno())
         self.assertEqual(reason, "cleanup_failed:interactive")
         self.assertEqual(execution["interactive"]["exit_code"], 125)
@@ -298,7 +301,7 @@ class MixedTests(unittest.TestCase):
         process.poll.return_value = 0
         with patch("bench.mixed.subprocess.Popen", return_value=process), \
              patch("bench.mixed.os.killpg", side_effect=PermissionError(errno.EPERM, "denied")), \
-             patch("bench.mixed._nonrunning_darwin_group", return_value=True):
+             patch("bench.mixed.nonrunning_darwin_group", return_value=True):
             execution, reason = _execute({"interactive": ["unused"]}, self.streams, directories, self.lock.fileno())
         self.assertIsNone(reason)
         self.assertEqual(execution["interactive"]["exit_code"], 0)

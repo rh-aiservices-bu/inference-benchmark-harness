@@ -250,6 +250,9 @@ class ContractTests(unittest.TestCase):
             state = campaign(self.config, root, "aiperf")
         self.assertEqual(state["status"], "evidence_invalid")
         self.assertEqual(child.call_count, 1)
+        saved = json.loads(next(root.glob("point-*/summary.json")).read_text())
+        self.assertIsNone(saved["requests"])
+        self.assertIsNone(saved["failed_requests"])
         self.assertEqual(state["next_point"], 0)
 
     @patch("bench.runner.verify", return_value=[{"status": "fail", "name": "model"}])
@@ -400,11 +403,24 @@ class ContractTests(unittest.TestCase):
     def test_cleanup_permission_failure_is_saved_as_invalid_execution(self):
         import errno
         with (self.root / ".lock").open("w") as lock, \
-             patch("bench.runner.os.killpg", side_effect=PermissionError(errno.EPERM, "fixture")):
+             patch("bench.runner.os.killpg", side_effect=PermissionError(errno.EPERM, "fixture")), \
+             patch("bench.runner.nonrunning_darwin_group", return_value=False):
             result = run_child([sys.executable, "-c", "pass"], self.root, 5, lock.fileno())
         self.assertEqual(result["reason"], "cleanup_failed")
         self.assertEqual(result["exit_code"], 125)
         self.assertIn("finished", result)
+
+    def test_nonrunning_group_permission_error_preserves_success_and_probe(self):
+        import errno
+        with (self.root / ".lock").open("w") as lock, \
+             patch("bench.runner.os.killpg", side_effect=PermissionError(errno.EPERM, "fixture")), \
+             patch("bench.runner.nonrunning_darwin_group", return_value=True):
+            result = run_child([sys.executable, "-c", "pass"], self.root, 5, lock.fileno())
+        self.assertIsNone(result["reason"])
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(len(result["cleanup_observations"]), 2)
+        self.assertTrue(all(item["status"] == "no_live_group_members"
+                            for item in result["cleanup_observations"]))
 
     def test_real_child_is_bounded_by_deadline(self):
         with (self.root / ".lock").open("w") as lock:

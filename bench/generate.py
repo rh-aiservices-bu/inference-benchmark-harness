@@ -66,4 +66,6 @@ def create_matrix(args):
             'max_requests_first_pass': plan['max_requests_first_pass'],
             'max_requests_with_manual_retries': plan['max_requests_with_manual_retries'],
             'traffic_sent': False, 'change': change,
+            'min_overlap_seconds': config['min_overlap_seconds'],
+            'stream_budgets': plan['experiments'][0]['budgets'],
             'next': 'Review with make matrix-plan MATRIX=<saved path> RUN=<new results directory>'}

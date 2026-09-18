@@ -119,12 +119,15 @@ def validate(config, base, smoke=False):
         data = Path(base) / workload["path"]
         lines = 0
         with data.open() as stream:
-            for line in stream:
+            for number, line in enumerate(stream, 1):
                 if not line.strip():
                     continue
-                row = json.loads(line)
-                if not isinstance(row.get("text"), str) or not row["text"]:
-                    raise ValueError("Each dataset row needs nonempty text")
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Dataset line {number}: {exc.msg}") from None
+                if not isinstance(row, dict) or not isinstance(row.get("text"), str) or not row["text"]:
+                    raise ValueError(f"Dataset line {number}: expected an object with nonempty text")
                 if "output_length" in row:
                     positive(row["output_length"], "output_length", integer=True)
                 lines += 1
@@ -163,6 +166,8 @@ def validate(config, base, smoke=False):
     if bounds["deadline_seconds"] <= bounds["duration_seconds"] + bounds["grace_seconds"]:
         raise ValueError("deadline_seconds must exceed duration plus grace; choose startup/export margin for your runtime")
     for metric in config.get("metrics", []):
+        if not isinstance(metric, dict) or not isinstance(metric.get("url"), str) or not metric["url"]:
+            raise ValueError("Each metrics producer needs a URL in metrics[].url")
         check_url(metric["url"])
         if not metric.get("name"):
             raise ValueError("Give each metrics producer a name")
