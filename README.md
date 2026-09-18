@@ -16,6 +16,8 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 
 ## Install and configure
 
+**What is the config?** `benchmark.json` is a settings file for one workload: endpoint URL, model, authentication, prompts, load limits and optional metrics/goals. It is **not a matrix**. Copy the example and fill in your environment; verification and smoke use that file. A matrix is optional and combines workload configs into coordinated experiments.
+
 Python **3.11–3.13**, Git and Make on Linux or macOS. AIPerf is pinned to 0.12.0 and does not support Python 3.14. Use a supported interpreter for `python3` below. Replace `/path/benchmark.json` with a filename in an existing private directory.
 
 ```sh
