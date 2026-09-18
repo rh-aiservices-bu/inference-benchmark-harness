@@ -6,7 +6,9 @@ A campaign measures one workload across selected load points on a fixed deployme
 
 ## Run sequence
 
-`plan → verify → smoke → inspect/drain → benchmark → report`
+`verify → smoke → inspect/drain → benchmark → report`
+
+`plan` and `plan-smoke` are optional command/budget previews. Verification validates the configuration and checks its configured endpoints; smoke repeats those checks before sending its one request.
 
 Each repeat follows `check → run → validate → checkpoint`. One Python supervisor invokes AIPerf child processes. These modules are not separate pods. AIPerf generates traffic and exports measurements. The supervisor decides whether to continue.
 
@@ -280,6 +282,21 @@ Stop the benchmark process you launched. Confirm outstanding requests and queues
 ## Evidence and storage
 
 Each run directory contains configuration, state, events and a provenance ledger. Each attempt retains pre/postflight checks, command, execution outcome, AIPerf log, native exports, summary and checksums. Point summaries compare accepted repeats. Their p95 range is neither a pooled percentile nor a confidence interval.
+
+### Viewer inputs
+
+Point the progress viewer at the run's output directory. No matrix is required for a single-workload sweep. The harness preserves native AIPerf exports; it does not translate them into GuideLLM CSV.
+
+| File | Consumer meaning |
+|---|---|
+| `config.json` | Resolved configuration. Matrix runs contain expanded `rows`, including each stream's workload, load and goals. |
+| `state.json` | Saved checkpoint. `completed` lists accepted attempt directories; count accepted repeats, not all attempted directories. Matrix checkpoints use `kind: "matrix"`; single-workload checkpoints use `schema_version: 1`. |
+| `events.jsonl`, `provenance.jsonl` | Run events and timestamped acquisition/save history. File modification time is not the original acquisition time. |
+| `<attempt>/native/profile_export.jsonl` | Native AIPerf per-request records. Mixed runs add a `<stream>/` directory before `native/`. Read integer `metadata.request_start_ns` without losing nanosecond precision. |
+| `<attempt>/native/profile_export_aiperf.json` | Native aggregate metrics with their exported units. Mixed runs use the same per-stream layout. |
+| `<attempt>/summary.json` | Evidence validity and measured outcomes; an accepted repeat can still miss a goal or contain request errors. |
+
+These are saved artifacts, not a process heartbeat or live ingress feed. A reader must tolerate incomplete exports while a run is active, display missing data explicitly, and never sum rejected attempts into accepted results. Do not expose raw configs, commands or native records through a dashboard: they can contain credentials, prompts and private paths. Use a safe field projection. Legacy CSV replay and native AIPerf progress are different input paths; consult the [viewer README](https://github.com/alexagriffith/flow-control-visualizer) for supported formats and limits.
 
 Native exports can contain prompts and operational data even when raw-response export is disabled. Retain them under your data policy. Storage grows with requests, prompt size, scrape dimensions and repeat/attempt count. Measure a small run before budgeting a large one. The 64 MiB free-space guard is not a size estimate. A New Relic dashboard is not a replacement for resumable state or native client evidence. [collection details](metrics.md#collection-and-new-relic).
 

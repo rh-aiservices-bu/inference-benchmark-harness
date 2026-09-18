@@ -11,7 +11,7 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 | Get a first test running | [Daniel's standalone AIPerf guide](https://github.com/dandawg/llm-d-flow-control-demo/blob/main/benchmarks/standalone-guide.md). His [demo repository](https://github.com/dandawg/llm-d-flow-control-demo) also provides a deployment scaffold |
 | Run repeatable experiments | This harness checks inputs, runs isolated or mixed workloads, repeats measurements and preserves evidence |
 | Understand the shared-GPU business case and prior experiments | [Alexa's decision guide](https://alexagriffith.github.io/flow-control-benchmarks/benchmark-decision-map/) and [benchmark repository](https://github.com/alexagriffith/flow-control-benchmarks) cover experiment choices, prior results and their evidence limits |
-| View saved progress or replay an experiment | [Flow Control Flight Recorder](https://github.com/alexagriffith/flow-control-visualizer) is a separate, read-only companion; its README explains the supported inputs |
+| View saved progress or replay an experiment | [Flow Control Flight Recorder](https://github.com/alexagriffith/flow-control-visualizer) is a separate, read-only companion; see [saved output formats](docs/operator-guide.md#viewer-inputs) and its README for supported inputs |
 | Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
 
 ## Install and configure
@@ -42,43 +42,37 @@ The example allows **20 requests or 60 seconds per repeat**, with a 30-second re
 
 ## Run
 
-One benchmark config is enough. Verification and smoke come first; no matrix or latency goal is required.
+Use **verify → smoke → benchmark**. One configuration file is enough; no matrix or latency goal is required. `CONFIG` selects the file you edited above. `RUN` selects a new directory for saved results.
 
-From the checkout, replace `/path/...` with your config and durable output paths. Complete each check before the next step. Preserve failures and use [debugging](docs/operator-guide.md#debugging) if a command fails.
-
-1. Preview the smoke command and budget. Confirm the endpoint and inputs.
-
-   ```sh
-   make plan-smoke CONFIG=/path/benchmark.json RUN=/path/results/smoke
-   ```
-
-2. Verify runtime and configured access/metrics checks. Continue when the result is `ready_for_smoke`, after reviewing any `unverified` checks. Empty `metrics` skips collection checks; no model-list API means smoke must confirm inference access.
+1. **Verify the setup.** Validate the config and check AIPerf, authentication, the configured model listing and metric endpoints. No inference traffic is sent.
 
    ```sh
    make verify CONFIG=/path/benchmark.json
    ```
 
-3. Send one short smoke request. Check its evidence. Establish [cache/warmup and drain conditions](docs/operator-guide.md#run-sequence) before measuring.
+   The config tells verification what to check. Continue at `ready_for_smoke`, after reviewing any `unverified` checks. Empty `metrics` skips collection checks; without a model-list API, smoke must confirm inference access.
+
+2. **Send one test request.** Smoke repeats the setup checks, sends one short synthetic request and validates its saved evidence. Read the result before continuing.
 
    ```sh
    make smoke CONFIG=/path/benchmark.json RUN=/path/results/smoke
    make report RUN=/path/results/smoke
    ```
 
-4. Preview the measured sweep, then execute the reviewed budget in a separate directory.
+   This checks the request path, not capacity or full warmup. Establish [cache/warmup and drain conditions](docs/operator-guide.md#run-sequence) before measuring.
+
+3. **Run the benchmark.** Confirm the configured load points, repeats and request/time limits. Use a separate results directory.
 
    ```sh
-   make plan CONFIG=/path/benchmark.json RUN=/path/results/sweep
    make benchmark CONFIG=/path/benchmark.json RUN=/path/results/sweep
-   ```
-
-5. Read the saved status and repeat summaries. An incomplete or unsuccessful campaign returns nonzero. `complete` without goals does not establish suitability.
-
-   ```sh
    make report RUN=/path/results/sweep
    ```
 
-`make help` lists commands. Plans send no traffic or network requests. `verify` reads endpoints but sends no inference. `benchmark` is an alias for `sweep`. Preflight requires direct endpoint URLs and refuses redirects, including login redirects.
+   Each attempt checks the setup, runs AIPerf, validates evidence and saves its outcome. An incomplete or unsuccessful campaign returns nonzero. `complete` without goals does not establish suitability. Preserve failures and use [debugging](docs/operator-guide.md#debugging) before retrying.
+
+**Optional preview:** `make plan CONFIG=/path/benchmark.json RUN=/path/results/sweep` prints the benchmark commands and maximum request budget without running anything. `make plan-smoke` does the same for the one-request smoke. Neither is a required execution step; smoke saves its actual command automatically.
+
+`make help` lists commands. `benchmark` is an alias for `sweep`. Preflight requires direct endpoint URLs and refuses redirects, including login redirects.
 
 The example uses **three valid repeats per point**. Invalid evidence stops immediately. A valid goal miss or request error is retained. Remaining repeats at that point finish before higher load is stopped. Inference is never automatically retried. See [recovery](docs/operator-guide.md#recovery) before using `make resume CONFIG=/path/benchmark.json RUN=/path/results/sweep`.
 
