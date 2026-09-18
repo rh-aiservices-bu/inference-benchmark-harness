@@ -45,6 +45,8 @@ class MatrixTests(unittest.TestCase):
         planned = plan_matrix(config, self.root / 'unused', 'aiperf')
         self.assertEqual(planned['max_requests_first_pass'], 360)
         self.assertEqual(planned['max_requests_with_manual_retries'], 1080)
+        self.assertEqual(planned['min_overlap_seconds'], config['min_overlap_seconds'])
+        self.assertEqual(planned['experiments'][0]['budgets']['interactive']['requests'], 20)
         self.assertFalse((self.root / 'unused').exists())
         self.assertEqual(config['rows'][2]['streams']['interactive']['load']['rates'], [.5])
 

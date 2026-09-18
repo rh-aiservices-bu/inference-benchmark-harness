@@ -8,6 +8,8 @@ A campaign measures one workload across selected load points on a fixed deployme
 
 `verify → smoke → inspect/drain → benchmark → report`
 
+Make commands default to `benchmark.local.json`. Smoke results go to `results/smoke`; benchmark results go to `results/benchmark`. Matrix commands use `results/matrix` and require an explicit `MATRIX` path. All three paths are ignored by Git. Override `CONFIG` or `RUN` for another experiment; existing runs are never overwritten.
+
 `plan` and `plan-smoke` are optional command/budget previews. Verification validates the configuration and checks its configured endpoints; smoke repeats those checks before sending its one request.
 
 Each repeat follows `check → run → validate → checkpoint`. One Python supervisor invokes AIPerf child processes. These modules are not separate pods. AIPerf generates traffic and exports measurements. The supervisor decides whether to continue.
@@ -222,14 +224,14 @@ If a crash leaves the last matrix row saved with status `ready`, use `matrix-res
 | Temporary connection failure or HTTP 502/503/504 during a read-only check | At most three reads, with 1-second and 2-second delays | Fix the path if the check remains unavailable |
 | Wrong model, rejected authentication, unready deployment or missing required metric | Stop before inference | Restore the planned precondition, then resume. Changed experiment configuration needs a new run |
 | AIPerf exits unsuccessfully, exceeds its deadline or leaves incomplete exports | Stop and preserve the attempt | Inspect logs and evidence. Deliberate resume makes a new attempt |
-| Interrupt or termination signal | Terminate the process group owned by this run and save the outcome | Inspect the partial attempt before resume |
+| Interrupt or termination signal | Terminate the process group owned by this run and save the outcome | Inspect the partial attempt before resume. An interruption during finalization can leave an uncheckpointed `running` state; reconcile ownership/drain and start a new RUN rather than editing state |
 | Valid measurement misses a goal or includes request errors | Retain it, finish the declared repeats at this load, then stop before higher load | Resume advances after those repeats, without rerunning accepted results. Prior goal misses/errors remain in the final campaign status |
 | Previous supervisor vanished without a checkpoint | Refuse automatic recovery | Reconcile running processes and evidence. Use a new campaign after resolving ownership |
 | Configuration, dataset or accepted evidence changed | Refuse to skip or resume under the old identity | Create a new experiment with the changed inputs |
 
 For a failed smoke, use `make resume-smoke CONFIG=/path/to/benchmark.json RUN=/path/to/results/smoke`. Ordinary `resume` uses the full workload and will reject the smoke configuration identity.
 
-Inference traffic is never automatically retried. Each repeat permits three attempts by default, including preflight failures. Configure `load.max_attempts_per_repeat` before the campaign. The legacy `max_attempts_per_point` name remains accepted when the new name is absent. Reaching this limit calls for diagnosis. The harness does not generate runtime patches, alter serving configuration or loosen goals.
+Inference traffic is never automatically retried. Each repeat permits three attempts by default, including preflight failures. Configure `load.max_attempts_per_repeat` before the campaign. The legacy `max_attempts_per_point` name remains accepted when the new name is absent. An exhausted run cannot accept another attempt. Preserve its files, fix the cause, and choose a new output directory, for example `make smoke RUN=results/smoke-2`. The harness does not generate runtime patches, alter serving configuration or loosen goals.
 
 The campaign lock prevents simultaneous owners on a local filesystem. Shared filesystems must support advisory locks and atomic rename. Keep one operator per output directory. Kubernetes Job retries are disabled in the example because a new pod must not silently replay traffic.
 

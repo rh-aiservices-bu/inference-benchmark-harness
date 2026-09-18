@@ -10,7 +10,6 @@ import re
 import shutil
 import signal
 import subprocess
-import sys
 import time
 
 from .config import file_digest, load_points, phase
@@ -18,6 +17,7 @@ from .evidence import analyze, finite_nonnegative, manifest, write_json
 from .preflight import verify
 from .provenance import artifact, artifact_name, operation, record, timestamp
 from .runner import command
+from .processes import nonrunning_darwin_group
 
 
 def arrival_overlap(directories, minimum):
@@ -116,28 +116,6 @@ def _prepare(config, directory, aiperf):
     return args
 
 
-def _nonrunning_darwin_group(process_id, observation=None):
-    """Darwin may return EPERM for a group whose remaining members are zombies."""
-    if sys.platform != "darwin":
-        return False
-    try:
-        result = subprocess.run(["ps", "-axo", "pgid=,stat="], capture_output=True, text=True, timeout=2)
-        if observation is not None:
-            observation.update(command=["ps", "-axo", "pgid=,stat="], exit_code=result.returncode,
-                               observed=timestamp())
-        if result.returncode:
-            return False
-        states = [fields[1] for line in result.stdout.splitlines()
-                  if len(fields := line.split()) == 2 and fields[0] == str(process_id)]
-        if observation is not None:
-            observation["target_group_states"] = states
-        return all(state.startswith("Z") for state in states)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        if observation is not None:
-            observation.update(error=type(exc).__name__, observed=timestamp())
-        return False
-
-
 def _execute(commands, streams, directories, lock_fd):
     processes, logs, executions, clocks = {}, {}, {}, {}
     failure = None
@@ -188,7 +166,7 @@ def _execute(commands, streams, directories, lock_fd):
                     pass
                 except OSError as exc:
                     probe = {}
-                    inactive = exc.errno == errno.EPERM and _nonrunning_darwin_group(process.pid, probe)
+                    inactive = exc.errno == errno.EPERM and nonrunning_darwin_group(process.pid, probe)
                     executions[name].setdefault("cleanup_observations", []).append({
                         "signal": int(stop_signal), "errno": exc.errno,
                         "group_probe": probe, "status": "no_live_group_members" if inactive else "failed"})
@@ -287,11 +265,13 @@ def execute_group(streams, directory, aiperf, lock_fd, min_overlap_seconds, base
             for goal in summary["goals"]:
                 goal["status"] = "unverified"
     goal_summaries = list(summaries.values()) + (list(shared.values()) if len(streams) > 1 else [])
-    outcome = ("goal_not_met" if any(g["status"] != "met" for s in goal_summaries for g in s["goals"]) else
+    outcome = ("invalid" if reasons else "goal_not_met" if any(g["status"] != "met" for s in goal_summaries for g in s["goals"]) else
                "request_errors" if any(s["failed_requests"] for s in summaries.values()) else "ready")
     result = {"evidence": "invalid" if reasons else "complete", "reasons": sorted(set(reasons)),
               "streams": summaries, "overlap": overlap, "shared_window": shared, "outcome": outcome,
               "measurement_scope": {"streams": "full_run_native", "shared_window": "common_arrival_cohort"}}
+    if "insufficient_arrival_overlap" in reasons:
+        result["action"] = "Review per-stream request and duration budgets against min_overlap_seconds; choose a sufficient common arrival window before planning a new run."
     write_json(directory / "summary.json", result)
     write_json(directory / "manifest.json", manifest(directory))
     return result

@@ -6,3 +6,7 @@ dist/
 .venv/
 .container-test-results/
 .env
+
+# Local operator inputs and benchmark evidence
+/benchmark.local.json
+/results/

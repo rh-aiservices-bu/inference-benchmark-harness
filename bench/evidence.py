@@ -168,7 +168,8 @@ def analyze(directory, config, execution):
         for goal in goals:
             goal["status"] = "unverified"
     return {"evidence": "invalid" if invalid else "complete", "reasons": sorted(set(invalid)),
-            "requests": len(rows), "failed_requests": failed,
+            "requests": None if "missing_or_malformed_client_evidence" in invalid else len(rows),
+            "failed_requests": None if "missing_or_malformed_client_evidence" in invalid else failed,
             "requested_limit": config["load"]["requests"], "metrics": coverage, "goals": goals,
             "measurements": measurements,
             "claim": "Observed client behavior for this workload and run location; no policy attribution"}

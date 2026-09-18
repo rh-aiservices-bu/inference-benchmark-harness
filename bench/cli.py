@@ -15,6 +15,8 @@ from .provenance import timestamp
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
+    from .configure import add_parser, create_config
+    add_parser(sub)
     for name in ("plan", "verify", "run"):
         child = sub.add_parser(name)
         child.add_argument("--config", required=True)
@@ -56,7 +58,9 @@ def main():
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
     try:
-        if args.action == "matrix-create":
+        if args.action == "configure":
+            result = create_config(args)
+        elif args.action == "matrix-create":
             from .generate import create_matrix
             result = create_matrix(args)
         elif args.action == "matrix-pause":
@@ -110,9 +114,18 @@ def main():
             else:
                 result = campaign(config, args.run, args.aiperf, args.resume, config_acquisition=acquired)
         print(json.dumps({**result, "reported": timestamp()}, indent=2))
-        return 0 if result.get("status", "complete") in ("complete", "ready_for_smoke", "plan_only", "pause_requested") else 2
+        return 0 if result.get("status", "complete") in ("complete", "ready_for_smoke", "plan_only", "pause_requested", "configured") else 2
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        print(f"{timestamp()['timestamp_utc']} Cannot continue: {exc}", file=sys.stderr)
+        detail = str(exc)
+        if isinstance(exc, FileExistsError):
+            detail = "Results already exist. Choose a new RUN directory, or inspect the saved report and deliberately resume the same experiment."
+        elif isinstance(exc, FileNotFoundError):
+            if getattr(args, 'config', None) and not Path(args.config).is_file():
+                detail = ("Matrix config not found. Set MATRIX=/path/to/matrix.json." if args.action.startswith('matrix-') else
+                          "Workload config not found. Run make configure with --url and --model, or set CONFIG=/path/to/config.json.")
+            elif args.action in ('report', 'matrix-pause'):
+                detail = "Saved run file not found. Set RUN to the output directory of an existing benchmark."
+        print(f"{timestamp()['timestamp_utc']} Cannot continue: {detail}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         print(f"{timestamp()['timestamp_utc']} Interrupted; inspect the saved campaign state before resuming", file=sys.stderr)

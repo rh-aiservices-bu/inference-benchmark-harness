@@ -1,14 +1,19 @@
 PYTHON ?= python3
-CONFIG ?= examples/benchmark.json
-RUN ?= /tmp/inference-benchmark-run
+CONFIG ?= benchmark.local.json
+ifeq ($(origin RUN),undefined)
+RUN = results/benchmark
+smoke plan-smoke resume-smoke: RUN = results/smoke
+matrix-plan matrix-run matrix-resume matrix-pause: RUN = results/matrix
+endif
 AIPERF ?= aiperf
 CONTAINER_ENGINE ?= docker
 IMAGE ?= inference-benchmark-harness:0.1.0
 TEST_ARTIFACTS ?= $(CURDIR)/.container-test-results
-MATRIX ?= examples/matrix.json
+MATRIX ?=
 
 .PHONY: benchmark help plan plan-smoke verify smoke sweep resume report test test-integration resume-smoke image test-container
 help:
+	@echo 'configure        Write a workload config; pass --url and --model in ARGS'
 	@echo 'matrix-create    Generate a validated matrix; pass CLI options in ARGS'
 	@echo 'matrix-plan      Preview named experiments, concurrent streams and total budget'
 	@echo 'matrix-run       Run MATRIX, checkpointing whole mixed repeats'
@@ -26,7 +31,8 @@ help:
 	@echo 'test-integration Run AIPerf against a local test server; no GPU needed'
 	@echo 'image            Build IMAGE with CONTAINER_ENGINE (default: docker)'
 	@echo 'test-container   Test the built image; save fixtures to TEST_ARTIFACTS'
-	@echo 'Set CONFIG, RUN and AIPERF to select inputs, output and runtime.'
+	@echo 'Default config: benchmark.local.json. Results: results/smoke, results/benchmark or results/matrix.'
+	@echo 'Override CONFIG, RUN or AIPERF when needed. Existing runs are never overwritten.'
 plan:
 	$(PYTHON) -m bench plan --config "$(CONFIG)" --run "$(RUN)" --aiperf "$(AIPERF)"
 plan-smoke:
@@ -50,7 +56,10 @@ test-integration:
 
 benchmark: sweep
 
-.PHONY: matrix-plan matrix-run matrix-resume matrix-pause test-matrix
+.PHONY: matrix-plan matrix-run matrix-resume matrix-pause test-matrix require-matrix
+require-matrix:
+	@test -n "$(MATRIX)" || { echo 'Set MATRIX=/path/to/matrix.json; matrix commands do not use CONFIG.' >&2; exit 2; }
+matrix-plan matrix-run matrix-resume: require-matrix
 matrix-plan:
 	$(PYTHON) -m bench matrix-plan --config "$(MATRIX)" --run "$(RUN)" --aiperf "$(AIPERF)"
 matrix-run:
@@ -76,3 +85,7 @@ test-container:
 .PHONY: matrix-create
 matrix-create:
 	$(PYTHON) -m bench matrix-create $(ARGS)
+
+.PHONY: configure
+configure:
+	$(PYTHON) -m bench configure --output "$(CONFIG)" $(ARGS)
