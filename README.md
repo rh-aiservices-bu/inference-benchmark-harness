@@ -18,7 +18,7 @@ Benchmark to find a workload's usable capacity, check latency targets and compar
 Python 3.11+ on Linux or macOS. AIPerf is pinned to 0.12.0.
 
 ```sh
-git clone https://github.com/rh-aiservices-bu/inference-benchmark-harness.git
+git clone https://github.com/redhat-ai-services/inference-benchmark-harness.git
 cd inference-benchmark-harness
 python3 -m venv .venv
 . .venv/bin/activate
