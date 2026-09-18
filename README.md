@@ -88,7 +88,7 @@ make matrix-run MATRIX=/path/matrix.json RUN=/path/results/matrix
 make report RUN=/path/results/matrix
 ```
 
-`matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). A [known final-checkpoint recovery issue](https://github.com/rh-aiservices-bu/inference-benchmark-harness/issues/1) can leave a finished matrix at `ready` after a crash. Preserve its evidence instead of replaying traffic.
+`matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). After a crash at the final row checkpoint, resume finalizes the saved outcomes without replaying accepted groups.
 
 ## Scope and evidence
 

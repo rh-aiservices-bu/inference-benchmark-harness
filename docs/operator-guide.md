@@ -213,7 +213,7 @@ If the base image is unavailable or unapproved, rebuild on an approved Python 3.
 
 ## Recovery
 
-A crash after the last matrix row is saved but before finalization can leave all repeats accepted with status `ready`. Resume does not currently finalize this state. Preserve the files and follow [issue #1](https://github.com/rh-aiservices-bu/inference-benchmark-harness/issues/1). Do not rerun the experiment just to obtain a `complete` status.
+A crash after the last matrix row is saved but before finalization can leave all repeats accepted with status `ready`. Resume verifies the accepted evidence and finalizes the saved outcomes without launching more traffic. Earlier goal misses and request errors remain in the final status.
 
 | Condition | Automatic behavior | Operator action |
 |---|---|---|
