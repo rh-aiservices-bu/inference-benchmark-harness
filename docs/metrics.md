@@ -102,6 +102,8 @@ AIPerf scrapes the configured Prometheus-format producer URLs directly. A Promet
 
 Use a stable URL for each replica, not a Service that alternates between pods. Inference bearer authentication does not configure metric authentication. Qualify approved producer access from the actual runner location. Metrics without requirements are optional. Missing optional GPU data does not invalidate client smoke. Missing class attribution prevents priority/fairness claims.
 
+Collection reads the configured producer endpoints during the attempt. It does not download a monitoring account’s history. Analysis streams server-metric JSONL once, while client request records and aggregate JSON are loaded into memory. Large runs still need storage and memory qualification. No automatic upload, pruning or New Relic fallback is implemented.
+
 New Relic is a separate monitoring service. Existing agents can send it engine, router and GPU metrics. This package does not install agents, query New Relic or upload native files. Keep compact run state and native evidence on operator-controlled storage. New Relic can hold the infrastructure history alongside it, correlated by saved UTC windows and producer identities.
 
 | Verify | Why |
