@@ -59,6 +59,40 @@ class MatrixTests(unittest.TestCase):
             self.assertEqual(again, state)
             self.assertEqual(len(self.calls), 12)
 
+    def test_resume_final_row_checkpoint_finalizes_without_replay(self):
+        self.spec['stages'] = [self.spec['stages'][0]]
+        self.spec['stages'][0]['streams']['interactive']['load']['rates'] = [0.5]
+        self.spec['repeats'] = 1
+        config = self.save()
+        for outcome in ('ready', 'goal_not_met', 'request_errors'):
+            with self.subTest(outcome=outcome):
+                root = (self.root / outcome).resolve()
+
+                def group(*args, **kwargs):
+                    result = self.group(*args, **kwargs)
+                    result['outcome'] = outcome
+                    return result
+
+                def interrupt_after_checkpoint(path, value):
+                    write_json(path, value)
+                    if path == root / 'state.json' and value['next_row'] == len(config['rows']):
+                        raise OSError('simulated interruption after durable final row')
+
+                with patch('bench.mixed.execute_group', side_effect=group), patch('bench.matrix.write_json', side_effect=interrupt_after_checkpoint):
+                    with self.assertRaisesRegex(OSError, 'durable final row'):
+                        matrix_campaign(config, root, 'aiperf')
+                saved = json.loads((root / 'state.json').read_text())
+                self.assertEqual(len(saved['completed']), 1)
+                accepted = root / saved['completed'][0]
+                before = {str(p.relative_to(accepted)): p.read_bytes() for p in accepted.rglob('*') if p.is_file()}
+                with patch('bench.mixed.execute_group', side_effect=AssertionError('must not replay traffic')):
+                    resumed = matrix_campaign(config, root, 'aiperf', True)
+                self.assertEqual(resumed['status'], 'complete' if outcome == 'ready' else outcome)
+                self.assertEqual(resumed['completed'], saved['completed'])
+                self.assertEqual(resumed['outcomes'], saved['outcomes'])
+                self.assertEqual(before, {str(p.relative_to(accepted)): p.read_bytes() for p in accepted.rglob('*') if p.is_file()})
+                self.assertEqual(json.loads((root / 'state.json').read_text()), resumed)
+
     def test_failed_peer_replaces_entire_group_and_preserves_first(self):
         self.spec['stages'] = [self.spec['stages'][1]]
         config = self.save()
