@@ -23,7 +23,7 @@ The operator chooses the next experiment and changes serving settings. The harne
 | Get a first test running | [Daniel's standalone AIPerf guide](https://github.com/dandawg/llm-d-flow-control-demo/blob/main/benchmarks/standalone-guide.md). His [demo repository](https://github.com/dandawg/llm-d-flow-control-demo) also provides a deployment scaffold |
 | Run repeatable experiments | This harness checks inputs, runs isolated or mixed workloads, repeats measurements and preserves evidence |
 | Understand the shared-GPU business case and prior experiments | [Alexa's decision guide](https://alexagriffith.github.io/flow-control-benchmarks/benchmark-decision-map/) and [benchmark repository](https://github.com/alexagriffith/flow-control-benchmarks) cover experiment choices, prior results and their evidence limits |
-| View saved progress or replay an experiment | [Flow Control Flight Recorder](https://github.com/alexagriffith/flow-control-visualizer) is a separate, read-only companion; see [saved output formats](docs/operator-guide.md#viewer-inputs) and its README for supported inputs |
+| View benchmark progress or replay an experiment | [Flow Control Visualizer & Dashboard repository](https://github.com/alexagriffith/flow-control-visualizer). The [progress dashboard](https://github.com/alexagriffith/flow-control-visualizer#follow-a-benchmark) reads AIPerf outputs and harness checkpoints; animated replay requires [compatible CSV artifacts](docs/operator-guide.md#viewer-inputs). Both views are read-only |
 | Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
 
 ## Install and configure
