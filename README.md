@@ -2,12 +2,23 @@
 
 Run bounded AIPerf tests against an existing streaming Chat Completions endpoint. Preserve each attempt and validate it before continuing.
 
+## Where to start
+
+Benchmark to find a workload's usable capacity, check latency targets and compare serving policies before sharing GPUs across applications.
+
+| Need | Start here |
+|---|---|
+| Get a first test running | [Daniel's standalone AIPerf guide](https://github.com/dandawg/llm-d-flow-control-demo/blob/main/benchmarks/standalone-guide.md); his [demo repository](https://github.com/dandawg/llm-d-flow-control-demo) also provides a deployment scaffold |
+| Run repeatable experiments | This harness: checks, isolated sweeps, mixed workloads, repeated measurements and preserved evidence |
+| Understand the shared-GPU business case and prior experiments | [Alexa's flow-control benchmarks](https://github.com/alexagriffith/flow-control-benchmarks): scenarios, results and their evidence limits |
+| Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
+
 ## Install and configure
 
 Python 3.11+ on Linux or macOS. AIPerf is pinned to 0.12.0.
 
 ```sh
-git clone https://github.com/alexagriffith/inference-benchmark-harness.git
+git clone https://github.com/rh-aiservices-bu/inference-benchmark-harness.git
 cd inference-benchmark-harness
 python3 -m venv .venv
 . .venv/bin/activate
