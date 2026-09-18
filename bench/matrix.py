@@ -170,7 +170,7 @@ def matrix_campaign(config, root, aiperf, resume=False, config_acquisition=None)
                 write_json(root / "config.json", config)
                 state = {"kind": "matrix", "config_hash": identity, "status": "ready", "next_row": 0,
                          "next_repeat": 0, "completed": [], "outcomes": {}}
-            if state["next_row"] == len(config["rows"]):
+            if state["status"] == "complete":
                 return state
             for index in range(state["next_row"], len(config["rows"])):
                 row = config["rows"][index]
