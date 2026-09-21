@@ -15,6 +15,32 @@ def finite_nonnegative(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
+def timing_consistency(rows, summary):
+    """Check populations and bounds without substituting a percentile estimator."""
+    reasons = []
+    successful = [row for row in rows if not row.get("error") and not row.get("metadata", {}).get("was_cancelled")]
+    for key in ("request_latency", "time_to_first_token"):
+        if key not in summary:
+            continue
+        values = [row.get("metrics", {}).get(key, {}) for row in successful]
+        if any(not isinstance(metric, dict) or metric.get("unit") != "ms"
+               or not finite_nonnegative(metric.get("value")) for metric in values):
+            reasons.append("incomplete_timing_population:" + key)
+            continue
+        values = [metric["value"] for metric in values]
+        aggregate = summary[key]
+        if not isinstance(aggregate, dict):
+            continue  # The aggregate type/unit check below reports this separately.
+        if "count" in aggregate and (not finite_nonnegative(aggregate["count"]) or aggregate["count"] != len(values)):
+            reasons.append("timing_counts_disagree:" + key)
+        p95 = aggregate.get("p95")
+        if finite_nonnegative(p95) and (not values or
+                (p95 < min(values) and not math.isclose(p95, min(values), abs_tol=1e-6)) or
+                (p95 > max(values) and not math.isclose(p95, max(values), abs_tol=1e-6))):
+            reasons.append("timing_percentile_out_of_bounds:" + key)
+    return reasons
+
+
 def exported_metric_names(metrics, definitions):
     """Map valid native samples to raw scrape names using exported metric types."""
     names = set()
@@ -96,6 +122,7 @@ def analyze(directory, config, execution):
                 latency = row.get("metrics", {}).get("request_latency", {})
                 if not isinstance(latency, dict) or latency.get("unit") != "ms" or not finite_nonnegative(latency.get("value")):
                     invalid.append("invalid_request_latency")
+        invalid.extend(timing_consistency(rows, summary))
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         invalid.append("missing_or_malformed_client_evidence")
     if execution["exit_code"] != 0:
@@ -115,6 +142,11 @@ def analyze(directory, config, execution):
                         sample = json.loads(line)
                         if type(sample["timestamp_ns"]) is not int or sample["timestamp_ns"] <= 0:
                             raise ValueError("Invalid scrape timestamp")
+                        fetches = endpoint_info[sample["endpoint_url"]]
+                        if (any(type(fetches[key]) is not int or fetches[key] <= 0
+                                for key in ("first_fetch_ns", "last_fetch_ns"))
+                                or not fetches["first_fetch_ns"] <= sample["timestamp_ns"] <= fetches["last_fetch_ns"]):
+                            raise ValueError("Scrape timestamp outside producer collection window")
                         names = exported_metric_names(sample["metrics"], definitions)
                         endpoint_samples.setdefault(sample["endpoint_url"], set()).update(names)
         except (OSError, ValueError, KeyError, TypeError, AttributeError):

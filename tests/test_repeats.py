@@ -31,7 +31,8 @@ class RepeatTests(unittest.TestCase):
             "aiperf_version": "0.12.0", "schema_version": "1.4", "request_count": {"avg": 1},
             "time_to_first_token": {"unit": "ms", "p95": 20}})
         row = {"metadata": {"request_start_ns": 100, "request_end_ns": 200},
-               "metrics": {"request_latency": {"value": 100, "unit": "ms"}}}
+               "metrics": {"request_latency": {"value": 100, "unit": "ms"},
+                           "time_to_first_token": {"value": 20, "unit": "ms"}}}
         (native / "profile_export.jsonl").write_text(json.dumps(row) + "\n")
         return {"exit_code": 0}
 
@@ -96,6 +97,10 @@ class RepeatTests(unittest.TestCase):
                 (native / "profile_export.jsonl").write_text(json.dumps(row) + "\n")
             elif not first_point:
                 summary["time_to_first_token"]["p95"] = 5
+                records = native / "profile_export.jsonl"
+                row = json.loads(records.read_text())
+                row["metrics"]["time_to_first_token"]["value"] = 5
+                records.write_text(json.dumps(row) + "\n")
             write_json(native / "profile_export_aiperf.json", summary)
             return result
         return execute
@@ -199,6 +204,10 @@ class RepeatTests(unittest.TestCase):
             path = args[1] / "native/profile_export_aiperf.json"
             native = json.loads(path.read_text())
             native["time_to_first_token"]["p95"] = len(self.calls) * 10
+            records = args[1] / "native/profile_export.jsonl"
+            row = json.loads(records.read_text())
+            row["metrics"]["time_to_first_token"]["value"] = len(self.calls) * 10
+            records.write_text(json.dumps(row) + "\n")
             write_json(path, native)
             return result
         with patch("bench.runner.run_child", side_effect=varying):

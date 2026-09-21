@@ -57,7 +57,7 @@ This creates `benchmark.local.json` without sending traffic or overwriting an ex
 | Metrics | Empty by default: **no server metrics collected or checked**. Client timing still works. Supply producer URLs and required names before making flow-control claims |
 | Goals | Empty by default: collect measurements without declaring a latency target pass |
 
-[Every configuration field, flag, default and time limit](docs/configuration.md). Review these settings before traffic. Use representative workloads and larger budgets for performance claims.
+[Every configuration field, flag, default and time limit](docs/configuration.md). Unknown JSON fields are rejected with their field path. Review these settings before traffic. Use representative workloads and larger budgets for performance claims.
 
 ## Run
 

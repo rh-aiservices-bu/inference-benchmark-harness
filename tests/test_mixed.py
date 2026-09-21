@@ -43,7 +43,8 @@ class MixedTests(unittest.TestCase):
                 "aiperf_version": "0.12.0", "schema_version": "1.4", "request_count": {"avg": 3},
                 "time_to_first_token": {"unit": "ms", "p95": 20}})
             rows = [{"metadata": {"request_start_ns": start, "request_end_ns": start + 10_000_000_000},
-                     "metrics": {"request_latency": {"value": 10000, "unit": "ms"}}} for start in values]
+                     "metrics": {"request_latency": {"value": 10000, "unit": "ms"},
+                                 "time_to_first_token": {"value": 20, "unit": "ms"}}} for start in values]
             (native / "profile_export.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
         return {name: {"exit_code": 0} for name in streams}, None
 
@@ -166,12 +167,21 @@ class MixedTests(unittest.TestCase):
     def test_missing_cohort_ttft_cannot_satisfy_goal_from_native_p95(self, verify):
         for config in self.streams.values():
             config["goals"] = {"ttft_p95_ms": 100}
-        with patch("bench.mixed._execute", side_effect=self.exports):
+        def missing(*args):
+            executions = self.exports(*args)
+            for directory in args[2].values():
+                path = directory / "native/profile_export.jsonl"
+                rows = [json.loads(line) for line in path.read_text().splitlines()]
+                for row in rows:
+                    del row["metrics"]["time_to_first_token"]
+                path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            return executions
+        with patch("bench.mixed._execute", side_effect=missing):
             result = execute_group(self.streams, self.root, "unused", self.lock.fileno(), 1)
-        self.assertEqual(result["evidence"], "complete")
-        self.assertEqual(result["streams"]["interactive"]["goals"][0]["status"], "met")
+        self.assertEqual(result["evidence"], "invalid")
+        self.assertEqual(result["streams"]["interactive"]["goals"][0]["status"], "unverified")
         self.assertEqual(result["shared_window"]["interactive"]["goals"][0]["status"], "unverified")
-        self.assertEqual(result["outcome"], "goal_not_met")
+        self.assertEqual(result["outcome"], "invalid")
 
     def process_setup(self):
         directories = {name: self.root / name for name in self.streams}
