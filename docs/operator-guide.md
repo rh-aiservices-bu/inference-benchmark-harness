@@ -217,6 +217,8 @@ If the base image is unavailable or unapproved, rebuild on an approved Python 3.
 
 ## Recovery
 
+Resume requires an existing `state.json` checkpoint. A missing checkpoint is rejected without creating run artifacts; check `RUN` before starting a new campaign. An active owner still blocks a second runner.
+
 If a crash leaves the last matrix row saved with status `ready`, use `matrix-resume` with unchanged inputs. It verifies accepted evidence and finalizes the status without sending traffic. Earlier goal misses and request errors remain in the final status.
 
 | Condition | Automatic behavior | Operator action |

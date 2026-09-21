@@ -72,6 +72,8 @@ Use **verify → smoke → benchmark**. All three read `benchmark.local.json`; n
 
    The config tells verification what to check. Continue at `ready_for_smoke`, after reviewing any `unverified` checks. Empty `metrics` skips collection checks; without a model-list API, smoke must confirm inference access.
 
+   In a terminal, verification shows green **PASS**, yellow **WARN** and red **FAIL** labels. WARN means unverified or not configured; FAIL blocks progress. Redirected output stays JSON. Use `make verify FORMAT=text` for plain readable output or `make -s verify FORMAT=json > verification.json` to save checks, discovered names and timestamps. `NO_COLOR=1` disables color.
+
 2. **Send one test request.** Smoke repeats the setup checks, sends one short synthetic request and validates its saved evidence. Read the result before continuing.
 
    ```sh

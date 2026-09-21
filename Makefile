@@ -6,6 +6,7 @@ smoke plan-smoke resume-smoke: RUN = results/smoke
 matrix-plan matrix-run matrix-resume matrix-pause: RUN = results/matrix
 endif
 AIPERF ?= aiperf
+FORMAT ?= auto
 CONTAINER_ENGINE ?= docker
 IMAGE ?= inference-benchmark-harness:0.1.0
 TEST_ARTIFACTS ?= $(CURDIR)/.container-test-results
@@ -38,7 +39,7 @@ plan:
 plan-smoke:
 	$(PYTHON) -m bench plan --config "$(CONFIG)" --run "$(RUN)" --aiperf "$(AIPERF)" --smoke
 verify:
-	$(PYTHON) -m bench verify --config "$(CONFIG)" --aiperf "$(AIPERF)"
+	@$(PYTHON) -m bench verify --config "$(CONFIG)" --aiperf "$(AIPERF)" --format "$(FORMAT)"
 smoke:
 	$(PYTHON) -m bench run --config "$(CONFIG)" --run "$(RUN)" --aiperf "$(AIPERF)" --smoke --execute
 sweep:

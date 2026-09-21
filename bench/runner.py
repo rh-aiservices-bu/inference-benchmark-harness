@@ -108,14 +108,20 @@ def run_child(args, directory, deadline, lock_fd):
 
 
 def campaign(config, root, aiperf, resume=False, config_acquisition=None):
-    os.umask(0o077)
     root = Path(root).resolve()
+    missing_checkpoint = resume and not (root / "state.json").is_file()
+    if missing_checkpoint and not (root / ".lock").is_file():
+        raise ValueError(f"No saved checkpoint at {root / 'state.json'}; check RUN or start a new campaign")
+    os.umask(0o077)
     root.mkdir(parents=True, exist_ok=resume)
-    with (root / ".lock").open("a") as lock:
+    # Inspect an existing owner before rejecting a checkpoint that is not written yet.
+    with (root / ".lock").open("r" if missing_checkpoint else "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("A process still owns this campaign") from None
+        if missing_checkpoint:
+            raise ValueError(f"No saved checkpoint at {root / 'state.json'}; check RUN or start a new campaign")
         with recording(root), operation("campaign", resume=resume):
             if config_acquisition:
                 record("config_acquisition", **config_acquisition)

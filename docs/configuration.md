@@ -114,6 +114,7 @@ Object checks do not prove actual request classification. Use matching router ev
 | `CONFIG` / CLI `--config` | Make: `benchmark.local.json`; CLI: required | Make `configure` output (explicit `--output` wins); workload input for `plan`, `verify`, `run`. CLI `--config` also selects matrix input for `matrix-plan`/`matrix-run` |
 | `RUN` / CLI `--run` | Make: `results/smoke` for smoke/plan-smoke/resume-smoke, `results/matrix` for matrix commands, otherwise `results/benchmark`; CLI: required except verify | Output directory. New execution refuses an existing directory; resume uses it deliberately |
 | `AIPERF` / CLI `--aiperf` | `aiperf` | Pinned executable path |
+| `FORMAT` / verify CLI `--format` | `auto` | Verify only: readable output in a terminal, JSON when redirected. Force `text` or `json`; text is colored only in a terminal unless `NO_COLOR` is set |
 | `PYTHON` | `python3` | Python used by Make; activate the supported virtualenv first |
 | `MATRIX` | Required for matrix-plan/run/resume | Matrix input; these commands do not read `CONFIG` or silently use a bundled example |
 | `ARGS` | Empty | Flags forwarded by Make `configure` / `matrix-create` |

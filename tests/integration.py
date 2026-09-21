@@ -76,6 +76,30 @@ def main():
         config["load"].update(concurrency=[1, 2], repeats=1, requests=3, duration_seconds=10,
                               request_timeout_seconds=3, grace_seconds=5, deadline_seconds=90)
         config["metrics"] = [{"name": "fixture", "url": config["endpoint"]["url"] + "/metrics", "required": [{"metric": "fixture_requests_total", "why": "Check collection during the request window"}]}]
+        # Exercise the public Make command and real read-only checks before any inference.
+        verify_config = output / "verify.json"
+        for metric, expected in (("fixture_requests_total", 0), ("missing_requests_total", 2)):
+            config["metrics"][0]["required"][0]["metric"] = metric
+            verify_config.write_text(json.dumps(config))
+            for format in ("auto", "text"):
+                result = subprocess.run(
+                    ["make", "verify", f"PYTHON={sys.executable}", f"AIPERF={args.aiperf}",
+                     f"CONFIG={verify_config}", f"FORMAT={format}"],
+                    cwd=ROOT, env=env, capture_output=True, text=True, timeout=40)
+                assert result.returncode == expected, result.stdout + result.stderr
+                if format == "auto":
+                    report = json.loads(result.stdout)
+                    assert report["status"] == ("ready_for_smoke" if expected == 0 else "preflight_failed")
+                    assert "timestamp_utc" in report["reported"]
+                    producer = next(c for c in report["checks"] if c["name"] == "fixture")
+                    assert "fixture_requests_total" in producer["metric_names"]
+                else:
+                    assert "\x1b" not in result.stdout
+                    assert ("READY FOR SMOKE" if expected == 0 else "BLOCKED") in result.stdout
+                    if expected:
+                        assert "Missing: missing_requests_total" in result.stdout
+                assert not Handler.requests, "Verification sent inference traffic"
+        config["metrics"][0]["required"][0]["metric"] = "fixture_requests_total"
         duration_requests = 0
         for case in ("generated", "file", "duration", "server-error"):
             if case == "file":

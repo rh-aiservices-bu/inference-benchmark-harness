@@ -2,14 +2,65 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
+import re
 import signal
 import sys
+import textwrap
 
 from .config import attempt_limit, attempt_prefix, load, load_points, repeat_count
 from .preflight import verify
 from .runner import campaign, command
 from .provenance import timestamp
+
+
+def verification_coverage(config):
+    """Expose skipped inspection without changing the runner's acceptance rules."""
+    gaps = []
+    if not config.get("kubernetes"):
+        gaps.append(("kubernetes", "Not configured; deployment readiness and identity are unverified."))
+    if not config.get("kubernetes", {}).get("routing"):
+        gaps.append(("routing", "Not configured; gateway, pool and objective bindings are unverified."))
+    if not config.get("metrics"):
+        gaps.append(("server_metrics", "No producers configured; server metrics will not be collected."))
+    elif not any(producer.get("required") for producer in config["metrics"]):
+        gaps.append(("metric_requirements", "No required series configured; missing server evidence will not block acceptance."))
+    return [{"name": name, "status": "unverified", "detail": detail} for name, detail in gaps]
+
+
+def format_verification(result, color=False):
+    """Render the same checks as JSON; warnings never turn failures into passes."""
+    styles = {"pass": ("PASS", 32), "unverified": ("WARN", 33), "fail": ("FAIL", 31)}
+
+    def clean(value):
+        # Endpoint output is untrusted: do not let control characters style the terminal.
+        return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(value))
+
+    rows = result["checks"] + result["coverage"]
+    names = [clean(f"{c['namespace']}/{c['name']}" if c.get("namespace") else c["name"]) for c in rows]
+    width = min(max((len(name) for name in names), default=5), 36)
+    lines = [f"Verification · {result['reported']['timestamp_utc']}", ""]
+    for check, name in zip(rows, names):
+        label, code = styles.get(check["status"], ("WARN", 33))
+        tag = f"\033[{code}m{label}\033[0m" if color else label
+        detail = check.get("detail", "")
+        if isinstance(detail, dict):
+            detail = json.dumps(detail, sort_keys=True)
+        details = [clean(detail)] if detail else []
+        if "expected_replicas" in check:
+            details.insert(0, f"{check['observed_pods']} active pods; expected {check['expected_replicas']}")
+        if "metric_names" in check:
+            details.insert(0, f"{len(check['metric_names'])} metric names discovered")
+        if check.get("missing"):
+            details.append("Missing: " + ", ".join(clean(item["metric"]) for item in check["missing"]))
+        lines.append(f"{tag}  {name:<{width}}")
+        lines.extend(textwrap.wrap(". ".join(details), width=100, initial_indent="      ", subsequent_indent="      "))
+    failed = result["status"] == "preflight_failed"
+    lines.extend(["", "BLOCKED — resolve FAIL checks, then run verify again." if failed else
+                  "READY FOR SMOKE — review WARN checks before sending one request.",
+                  "No inference sent. PASS covers the named check only; request classification still needs smoke evidence."])
+    return "\n".join(lines)
 
 
 def main():
@@ -22,6 +73,9 @@ def main():
         child.add_argument("--config", required=True)
         child.add_argument("--aiperf", default="aiperf")
         child.add_argument("--smoke", action="store_true")
+        if name == "verify":
+            child.add_argument("--format", choices=("auto", "text", "json"), default="auto",
+                               help="auto: readable terminal output, JSON when redirected")
         if name != "verify":
             child.add_argument("--run", required=True)
         if name == "run":
@@ -109,11 +163,15 @@ def main():
                                  for index, point in enumerate(points) for repeat in range(repeats)],
                 }
             elif args.action == "verify":
-                result = {"checks": verify(config, args.aiperf)}
+                result = {"checks": verify(config, args.aiperf), "coverage": verification_coverage(config)}
                 result["status"] = "preflight_failed" if any(c["status"] == "fail" for c in result["checks"]) else "ready_for_smoke"
             else:
                 result = campaign(config, args.run, args.aiperf, args.resume, config_acquisition=acquired)
-        print(json.dumps({**result, "reported": timestamp()}, indent=2))
+        result = {**result, "reported": timestamp()}
+        if args.action == "verify" and (args.format == "text" or args.format == "auto" and sys.stdout.isatty()):
+            print(format_verification(result, color=sys.stdout.isatty() and "NO_COLOR" not in os.environ))
+        else:
+            print(json.dumps(result, indent=2))
         return 0 if result.get("status", "complete") in ("complete", "ready_for_smoke", "plan_only", "pause_requested", "configured") else 2
     except (OSError, ValueError, KeyError, TypeError) as exc:
         detail = str(exc)
