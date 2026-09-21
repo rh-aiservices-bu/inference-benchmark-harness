@@ -62,8 +62,50 @@ def load(path, smoke=False):
     return validate(json.loads(Path(path).read_text()), Path(path).resolve().parent, smoke)
 
 
+def fields(value, allowed, path):
+    """Reject misspellings before an optional setting can silently use its default."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be an object")
+    unknown = sorted(set(value) - set(allowed.split()))
+    if unknown:
+        raise ValueError("Unsupported field: " + ", ".join(f"{path}.{key}" for key in unknown))
+
+
+def objects(value, path):
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise ValueError(f"{path} must be an array of objects")
+    return enumerate(value)
+
+
+def validate_fields(config):
+    fields(config, "schema_version endpoint workload load metrics goals kubernetes record_processors", "config")
+    fields(config.get("endpoint"), "url path models_path model api_key_env headers", "endpoint")
+    fields(config.get("workload"), "type path sha256 input_tokens output_tokens tokenizer", "workload")
+    fields(config.get("load"), "concurrency rates arrival max_concurrency requests duration_seconds "
+           "request_timeout_seconds grace_seconds deadline_seconds repeats max_attempts_per_repeat max_attempts_per_point", "load")
+    fields(config.get("goals", {}), "ttft_p95_ms latency_p95_ms max_error_fraction", "goals")
+    for i, producer in objects(config.get("metrics", []), "metrics"):
+        path = f"metrics[{i}]"
+        fields(producer, "name url required", path)
+        for j, requirement in objects(producer.get("required", []), path + ".required"):
+            fields(requirement, "metric why", f"{path}.required[{j}]")
+    if "kubernetes" in config:
+        scope = config["kubernetes"]
+        fields(scope, "context deployments routing", "kubernetes")
+        for i, target in objects(scope.get("deployments", []), "kubernetes.deployments"):
+            fields(target, "name namespace replicas", f"kubernetes.deployments[{i}]")
+        if "routing" in scope:
+            routing = scope["routing"]
+            fields(routing, "namespace route pool model_deployment picker_deployment gateway "
+                   "rule_index objectives selected_objective objective_header", "kubernetes.routing")
+            fields(routing.get("gateway", {}), "name namespace section", "kubernetes.routing.gateway")
+            for i, objective in objects(routing.get("objectives", []), "kubernetes.routing.objectives"):
+                fields(objective, "name priority", f"kubernetes.routing.objectives[{i}]")
+
+
 def validate(config, base, smoke=False):
     """Validate an in-memory config; resolve dataset paths from its source folder."""
+    validate_fields(config)
     if config.get("schema_version") != 1:
         raise ValueError("Expected schema_version 1")
     positive(config.get("record_processors", 1), "record_processors", integer=True)

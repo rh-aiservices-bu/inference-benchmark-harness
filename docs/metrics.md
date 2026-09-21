@@ -6,6 +6,10 @@ Use this reference to identify candidate metrics. Confirm their names, units and
 
 AIPerf 0.12.0 exports `profile_export_aiperf.json` (schema 1.4) and `profile_export.jsonl`. Read each exported `unit`. Do not infer it from an old tool's column name.
 
+Timing aggregates require valid matching records, matching exported counts when present, and p95 within the observed range. This catches missing or contradictory timing data without replacing AIPerf's percentile estimator. It does not prove the exact percentile was calculated correctly.
+
+Server sample timestamps must lie within their producer's exported fetch interval, which must cover the requests when metrics are required. Unchanged values may appear only once in JSONL; the fetch timeline still establishes collection coverage.
+
 | Export key | Meaning | Use |
 |---|---|---|
 | `time_to_first_token` | Client time to first token. Milliseconds in the qualified path | Compare against a declared TTFT goal |

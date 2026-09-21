@@ -2,6 +2,8 @@
 
 `benchmark.local.json` describes one workload. `matrix.json` optionally coordinates several workloads or experiments. Both use JSON. No matrix or latency goal is required to verify access or run a workload.
 
+Unknown fields are rejected, including nested settings. For example, `load.repeat` fails validation; use `load.repeats`.
+
 ## Create a workload config
 
 ```sh

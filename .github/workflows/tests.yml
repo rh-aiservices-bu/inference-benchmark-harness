@@ -30,3 +30,14 @@ jobs:
       - run: make test-matrix
         env:
           TMPDIR: /tmp
+  container-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: make image
+      - name: Prepare writable results for container UID
+        run: |
+          mkdir -p "$RUNNER_TEMP/harness-results"
+          sudo chown 10001:10001 "$RUNNER_TEMP/harness-results"
+      - run: make test-container TEST_ARTIFACTS="$RUNNER_TEMP/harness-results"

@@ -37,7 +37,8 @@ class ContractTests(unittest.TestCase):
             "aiperf_version": "0.12.0", "schema_version": "1.4",
             "request_count": {"avg": 2}, "time_to_first_token": {"unit": "ms", "p95": 20}})
         row = {"metadata": {"request_start_ns": 100, "request_end_ns": 200},
-               "metrics": {"request_latency": {"value": 100, "unit": "ms"}}}
+               "metrics": {"request_latency": {"value": 100, "unit": "ms"},
+                           "time_to_first_token": {"value": 20, "unit": "ms"}}}
         (native / "profile_export.jsonl").write_text((json.dumps(row) + "\n") * 2)
         return {"exit_code": 0, "reason": None}
 

@@ -209,7 +209,7 @@ make image IMAGE=inference-benchmark-harness:0.1.0
 make test-container IMAGE=inference-benchmark-harness:0.1.0 TEST_ARTIFACTS=/path/to/test-artifacts
 ```
 
-`test-container` runs unit and real AIPerf fixture tests in the built image. It sends no model traffic. Set `CONTAINER_ENGINE=podman` for an approved Podman installation. The output directory must be writable by container UID 10001. The target checks this before testing.
+`test-container` runs unit and real AIPerf fixture tests in the built image, which includes Make and the Makefile. Tests and examples are mounted from the checkout. It sends no model traffic. Set `CONTAINER_ENGINE=podman` for an approved Podman installation. The output directory must be writable by container UID 10001. The target checks this before testing.
 
 Results must be writable by UID 10001. Adapt [the Job example](../examples/job.yaml) to an approved image and existing input/output PVCs. It uses no API token, requires no GPU and disables Job retries. The default image contains no kubectl: enable Kubernetes checks only in an environment providing kubectl and the required read permissions. Check sidecar completion, CA trust and network policy. Preserve required mutual TLS.
 
