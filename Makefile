@@ -27,7 +27,7 @@ help:
 	@echo 'sweep/benchmark  Run configured points and repeats sequentially'
 	@echo 'resume           Continue a stopped campaign after reviewing its reason'
 	@echo 'resume-smoke     Resume a failed smoke with its original smoke configuration'
-	@echo 'report           Read saved results'
+	@echo 'report           Summarize saved results; FORMAT=json for details'
 	@echo 'test             Run contract tests without AIPerf or a cluster'
 	@echo 'test-integration Run AIPerf against a local test server; no GPU needed'
 	@echo 'image            Build IMAGE with CONTAINER_ENGINE (default: docker)'
@@ -49,7 +49,7 @@ resume:
 resume-smoke:
 	$(PYTHON) -m bench run --config "$(CONFIG)" --run "$(RUN)" --aiperf "$(AIPERF)" --smoke --resume --execute
 report:
-	$(PYTHON) -m bench report --run "$(RUN)"
+	@$(PYTHON) -m bench report --run "$(RUN)" --format "$(FORMAT)"
 test:
 	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v
 test-integration:

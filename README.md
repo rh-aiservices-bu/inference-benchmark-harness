@@ -135,6 +135,17 @@ Every stream uses the same verify/smoke preparation before coordinated load.
 
 `matrix-pause` finishes the current group before pausing. `matrix-resume` rechecks inputs and continues after accepted groups. Use the same `MATRIX` and `RUN`. Invalid peers or insufficient traffic overlap invalidate the whole repeat. See [matrix configuration and policy comparisons](docs/operator-guide.md#matrix-configuration). If a crash interrupts finalization after the last row, resume verifies accepted evidence and finalizes the status without replaying traffic.
 
+## Read results
+
+`make report RUN=results/benchmark` summarizes saved results without sending requests. It shows checkpointed repeats, load, per-run p95 TTFT and request latency, completed requests/s, failed/total requests, goal outcomes and collection gaps. Ranges compare runs; they are not pooled percentiles. Unaccepted observations are listed separately.
+
+```sh
+make -s report RUN=results/benchmark > summary.md
+make -s report RUN=results/benchmark FORMAT=json > report.json
+```
+
+The first file is the compact summary. JSON retains detailed saved results. Missing or damaged artifacts produce a partial report with the problem listed. An incomplete or unsuccessful campaign, or a report read error, returns a nonzero exit code after printing available results. Review labels before sharing; detailed JSON can contain operational data. [Report behavior](docs/operator-guide.md#read-a-report).
+
 ## Scope and evidence
 
 One workload config describes one stream. A matrix combines streams and explicit experiments, with optional observed serving-profile gates for detector/filter comparisons. The harness does not deploy, scale or choose serving parameters. No KServe, OpenShift or Prometheus database is required. Multi-turn, tools, Responses API, arrival-time replay and New Relic querying are outside this package.

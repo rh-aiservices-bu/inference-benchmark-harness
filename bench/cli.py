@@ -86,6 +86,8 @@ def main():
             child.add_argument("--resume", action="store_true")
     report = sub.add_parser("report")
     report.add_argument("--run", required=True)
+    report.add_argument("--format", choices=("auto", "text", "markdown", "json"), default="json",
+                        help="text/markdown: compact summary; json: detailed saved results (CLI default)")
     pause = sub.add_parser("matrix-pause")
     pause.add_argument("--run", required=True)
     for name in ("matrix-plan", "matrix-run"):
@@ -136,13 +138,9 @@ def main():
             result = (plan_matrix(config, args.run, args.aiperf) if args.action == "matrix-plan" else
                       matrix_campaign(config, args.run, args.aiperf, args.resume, acquired))
         elif args.action == "report":
-            root = Path(args.run)
-            result = {"state": json.loads((root / "state.json").read_text()),
-                      "attempts": {str(path.parent.name): json.loads(path.read_text()) for path in sorted(root.glob("point-*/summary.json"))}}
-            result["points"] = {path.stem: json.loads(path.read_text()) for path in sorted(root.glob("point-*-repeats.json"))}
-            result["status"] = result["state"]["status"]
-            if result["state"].get("kind") == "matrix":
-                result["groups"] = {p.parent.name: json.loads(p.read_text()) for p in sorted(root.glob("row-*/summary.json"))}
+            from .report import read_report, format_report
+            report_data = read_report(args.run)
+            result = report_data[0]
         else:
             acquired = {"started": timestamp()}
             config = load(args.config, args.smoke)
@@ -171,7 +169,9 @@ def main():
             else:
                 result = campaign(config, args.run, args.aiperf, args.resume, config_acquisition=acquired)
         result = {**result, "reported": timestamp()}
-        if args.action == "verify" and (args.format == "text" or args.format == "auto" and sys.stdout.isatty()):
+        if args.action == "report" and args.format != "json":
+            print(format_report(report_data))
+        elif args.action == "verify" and (args.format == "text" or args.format == "auto" and sys.stdout.isatty()):
             try:
                 print(format_verification(result, color=sys.stdout.isatty() and not os.environ.get("NO_COLOR")))
             except (KeyError, TypeError, ValueError) as exc:
@@ -180,6 +180,8 @@ def main():
                 print(json.dumps(result, indent=2))
         else:
             print(json.dumps(result, indent=2))
+        if args.action == "report" and result.get("report_issues"):
+            return 2
         return 0 if result.get("status", "complete") in ("complete", "ready_for_smoke", "plan_only", "pause_requested", "configured") else 2
     except (OSError, ValueError, KeyError, TypeError) as exc:
         detail = str(exc)

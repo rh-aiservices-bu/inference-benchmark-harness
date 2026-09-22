@@ -283,6 +283,19 @@ New Relic query/import, unit conversion and source-to-ingested metric mapping ar
 
 Stop the benchmark process you launched. Confirm outstanding requests and queues have drained. Preserve results before removing only this session's Jobs, tunnels, containers and temporary inputs. Verify those resources are gone. Shared model Deployments, Gateways, nodes and clusters are not part of benchmark cleanup. Never scale them down as an implicit “shutdown.”
 
+## Read a report
+
+Run `make report RUN=/path/to/results` after a run or while inspecting saved progress. It reads files only. Save its compact output with `make -s report RUN=/path/to/results > summary.md`. Use `FORMAT=json` for the detailed state and saved summaries. Direct CLI callers retain JSON by default; add `--format text` for the compact view.
+
+- Each table row summarizes one point/workload/population. Numeric ranges are min–max across its runs, not averaged or pooled p95 values. Failed/total counts sum only within that row.
+- Checkpointed repeats and unaccepted attempts are separate. Unaccepted observations may contain useful client measurements but have not passed whole-attempt/group validation. A successful peer from a rejected mixed group remains unaccepted.
+- Full-run and shared-arrival populations remain separate. Shared throughput is unknown because the harness does not calculate it. Goals count recorded evaluations, including both populations in mixed runs.
+- Missing, malformed or unreadable files are listed while other results remain visible. Missing measurements stay unknown. A changing checkpoint is flagged; regenerate after writes finish. Reporting does not lock a live run, revalidate evidence hashes, infer process liveness or change runner acceptance.
+- Saved status and report completeness are distinct. Incomplete/unsuccessful campaigns and report read errors return exit code 2 after output. A complete campaign can still have optional collection warnings.
+- Run windows come from available accepted native aggregate timestamps; absent windows stay unknown. Exports without a timezone are labeled accordingly, never assumed to be UTC. Generation time is recorded separately. The compact view excludes endpoint URLs, headers, prompts, raw errors and private paths, but saved labels still need review before sharing. Detailed JSON is not a redacted export.
+
+Use the listed checks to diagnose missing evidence before tuning. The report gives a status-based next action; it does not compare separate campaigns, choose detector limits, calculate server-side queue statistics or query New Relic. Requested token shape is configuration, not proof of observed token lengths. Native inter-token latency and token throughput remain in the AIPerf exports.
+
 ## Evidence and storage
 
 Each run directory contains configuration, state, events and a provenance ledger. Each attempt retains pre/postflight checks, command, execution outcome, AIPerf log, native exports, summary and checksums. Point summaries compare accepted repeats. Their p95 range is neither a pooled percentile nor a confidence interval.
