@@ -11,6 +11,13 @@ from .provenance import timestamp
 
 ATTEMPT = re.compile(r"^(point|row)-(\d+)(?:-repeat-\d+)?-attempt-\d+$")
 METRICS = ("ttft_p95_ms", "latency_p95_ms", "request_throughput_rps")
+NATIVE_METRICS = (
+    ("inter_token_latency", "p95", "ms", "itl_p95_ms"),
+    ("output_token_throughput", "avg", "tokens/sec", "output_tokens_per_second"),
+    ("input_sequence_length", "avg", "tokens", "input_tokens_mean"),
+    ("output_sequence_length", "avg", "tokens", "output_tokens_mean"),
+    ("benchmark_duration", "avg", "sec", "duration_seconds"),
+)
 
 
 def clean(value):
@@ -121,7 +128,9 @@ def read_report(root):
                 issues.append(f"{directory.name}: accepted group has incomplete stream evidence")
                 continue
             scope = "full run" if is_accepted else "unaccepted"
-            rows.setdefault((point, clean(stream), scope), []).append(summary)
+            # Display-only enrichment must not change the saved validation summary.
+            observation = {**summary, "native_metrics": {}}
+            rows.setdefault((point, clean(stream), scope), []).append(observation)
             goals = summary.get("goals", [])
             if is_accepted and isinstance(goals, list):
                 for goal in goals:
@@ -132,6 +141,17 @@ def read_report(root):
             if matrix and not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", stream):
                 continue
             native = read(child / "native/profile_export_aiperf.json", required=False)
+            native_metrics = {}
+            for metric, statistic, unit, key in NATIVE_METRICS:
+                item = native.get(metric)
+                if item is None:
+                    continue
+                if not isinstance(item, dict) or item.get("unit") != unit or not number(item.get(statistic)):
+                    notices[f"{clean(stream)}: native {metric}.{statistic} unavailable: expected finite nonnegative {unit} ({scope_note})"] += 1
+                    continue
+                native_metrics[key] = item[statistic]
+            observation["native_metrics"] = native_metrics
+            result.setdefault("native_metrics", {}).setdefault(directory.name, {})[stream] = native_metrics
             if is_accepted and native:
                 try:
                     times = [datetime.fromisoformat(native[key]) for key in ("start_time", "end_time")]
@@ -201,7 +221,7 @@ def format_report(data):
     if not matrix and isinstance(workload, dict):
         inp, out = workload.get("input_tokens"), workload.get("output_tokens")
         if number(inp) and number(out):
-            lines.append(f"Requested shape: {inp:g} input / {out:g} output tokens; actual lengths not summarized")
+            lines.append(f"Requested shape: {inp:g} input / {out:g} output tokens")
     if windows and len({w[2] for w in windows}) == 1:
         lines.append(f"Available accepted run window: {min(w[0] for w in windows)} to {max(w[1] for w in windows)} ({windows[0][2]})")
     else:
@@ -224,6 +244,17 @@ def format_report(data):
     lines += ["", "Ranges show per-run min–max, not pooled percentiles. Unknown is not zero. Unaccepted observations do not count toward repeats."]
     if matrix:
         lines.append("Shared arrivals are a subset of full runs; do not add their counts. Shared throughput is not calculated.")
+    native_rows = [(key, summaries) for key, summaries in sorted(rows.items()) if key[2] != "shared arrivals"]
+    if native_rows:
+        lines += ["", "## Streaming and workload", "",
+                  "| Point/row | Workload | Scope | ITL p95 ms | Output tokens/s | Input tokens mean | Output tokens mean | Duration s |",
+                  "|---|---|---|---:|---:|---:|---:|---:|"]
+        for (point, stream, scope), summaries in native_rows:
+            values = [span([s.get("native_metrics", {}).get(key) for s in summaries])
+                      for _, _, _, key in NATIVE_METRICS]
+            lines.append(f"| {point} | {stream} | {scope} | " + " | ".join(values) + " |")
+        lines += ["", "Native AIPerf full-run statistics; ranges span repeats. ITL is inter-token latency. Token lengths are observed means, not requested limits. Duration is the native benchmark duration.",
+                  "Cache-hit rate and server queue statistics are not calculated. Check serving metrics over the same run windows."]
     lines += ["", "## Checks", ""]
     lines.append("Goals: " + (", ".join(f"{n} {status}" for status, n in sorted(goals.items())) if goals else "none evaluated"))
     lines.extend(f"- {item} [{n} checks]" for item, n in sorted(notices.items()))

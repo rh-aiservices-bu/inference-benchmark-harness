@@ -178,3 +178,56 @@ class ReportTests(unittest.TestCase):
         self.save(name + '/native/profile_export_aiperf.json',
                   {'start_time': '2026-09-18T10:00:00-04:00', 'end_time': '2026-09-18T10:00:05-04:00'})
         self.assertIn('2026-09-18T14:00:05+00:00 (UTC)', format_report(read_report(self.root)))
+
+    def test_native_statistics_keep_units_ranges_and_evidence_unchanged(self):
+        for repeat, itl, output_length in [(1, 4, 280), (2, 7, 300)]:
+            name = self.attempt(repeat)
+            self.save(name + '/native/profile_export_aiperf.json', {
+                'inter_token_latency': {'unit': 'ms', 'p95': itl},
+                'output_token_throughput': {'unit': 'tokens/sec', 'avg': 247},
+                'input_sequence_length': {'unit': 'tokens', 'avg': 1000},
+                'output_sequence_length': {'unit': 'tokens', 'avg': output_length},
+                'benchmark_duration': {'unit': 'sec', 'avg': 60},
+            })
+        before = {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+        data = read_report(self.root)
+        output = format_report(data)
+        self.assertIn('| full run | 4–7 | 247 | 1e+03 | 280–300 | 60 |', output)
+        self.assertNotIn('native_metrics', data[0]['attempts'][name])
+        self.assertEqual(data[0]['native_metrics'][name]['workload']['input_tokens_mean'], 1000)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
+
+    def test_invalid_native_metrics_preserve_other_metrics_and_missing_is_unknown(self):
+        name = self.attempt(1)
+        self.save(name + '/native/profile_export_aiperf.json', {
+            'inter_token_latency': {'unit': 'sec', 'p95': 4},
+            'output_token_throughput': {'unit': 'tokens/sec', 'avg': float('inf')},
+            'input_sequence_length': [],
+            'output_sequence_length': {'unit': 'tokens', 'avg': True},
+            'benchmark_duration': {'unit': 'sec', 'avg': 60},
+        })
+        self.attempt(2)  # Older or incomplete export: absence cannot become zero.
+        data = read_report(self.root)
+        output = format_report(data)
+        self.assertIn('| full run | unknown | unknown | unknown | unknown | 60 (partial) |', output)
+        self.assertIn('native inter_token_latency.p95 unavailable', output)
+        self.assertIn('| 2 | 2/20 | 10 | 90 | 2 |', output)
+        self.assertEqual(data[0]['status'], 'complete')
+
+    def test_native_metrics_never_leak_into_shared_cohort_or_accept_rejected_peer(self):
+        name = 'row-001-repeat-01-attempt-001'
+        rejected = 'row-001-repeat-02-attempt-001'
+        self.state.update(kind='matrix', completed=[name])
+        self.save('state.json', self.state)
+        for directory, evidence, itl in [(name, 'complete', 4), (rejected, 'invalid', 900)]:
+            self.save(directory + '/summary.json', {'evidence': evidence,
+                      'streams': {'a': self.summary(), 'b': self.summary()},
+                      'shared_window': {'a': self.summary(20)}})
+            self.save(directory + '/a/native/profile_export_aiperf.json',
+                      {'inter_token_latency': {'unit': 'ms', 'p95': itl}})
+        output = format_report(read_report(self.root))
+        native_table = output.split('## Streaming and workload')[1].split('## Checks')[0]
+        self.assertIn('| a | full run | 4 |', native_table)
+        self.assertIn('| a | unaccepted | 900 |', native_table)
+        self.assertNotIn('shared arrivals', native_table)
+        self.assertNotIn('4–900', native_table)
