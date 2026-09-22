@@ -76,14 +76,14 @@ def main():
         config["load"].update(concurrency=[1, 2], repeats=1, requests=3, duration_seconds=10,
                               request_timeout_seconds=3, grace_seconds=5, deadline_seconds=90)
         config["metrics"] = [{"name": "fixture", "url": config["endpoint"]["url"] + "/metrics", "required": [{"metric": "fixture_requests_total", "why": "Check collection during the request window"}]}]
-        # Exercise the public Make command and real read-only checks before any inference.
+        # Suppress nested GNU Make directory notices so stdout contains only the verify report.
         verify_config = output / "verify.json"
         for metric, expected in (("fixture_requests_total", 0), ("missing_requests_total", 2)):
             config["metrics"][0]["required"][0]["metric"] = metric
             verify_config.write_text(json.dumps(config))
             for format in ("auto", "text"):
                 result = subprocess.run(
-                    ["make", "verify", f"PYTHON={sys.executable}", f"AIPERF={args.aiperf}",
+                    ["make", "--no-print-directory", "verify", f"PYTHON={sys.executable}", f"AIPERF={args.aiperf}",
                      f"CONFIG={verify_config}", f"FORMAT={format}"],
                     cwd=ROOT, env=env, capture_output=True, text=True, timeout=40)
                 assert result.returncode == expected, result.stdout + result.stderr

@@ -150,7 +150,7 @@ def matrix_campaign(config, root, aiperf, resume=False, config_acquisition=None)
         raise ValueError(f"No saved checkpoint at {root / 'state.json'}; check RUN or start a new campaign")
     os.umask(0o077)
     root.mkdir(parents=True, exist_ok=resume)
-    # Inspect an existing owner before rejecting a checkpoint that is not written yet.
+    # Check ownership first; read mode cannot recreate a lock removed during inspection.
     with (root / ".lock").open("r" if missing_checkpoint else "a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

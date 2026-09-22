@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from bench.cli import main
+from bench.cli import main, verification_coverage
 
 CONFIG = Path(__file__).resolve().parents[1] / "examples/benchmark.json"
 
@@ -14,6 +14,12 @@ CONFIG = Path(__file__).resolve().parents[1] / "examples/benchmark.json"
 class Terminal(io.StringIO):
     def isatty(self):
         return True
+
+
+class AsciiTerminal(Terminal):
+    def write(self, text):
+        text.encode("ascii")
+        return super().write(text)
 
 
 class VerifyOutputTests(unittest.TestCase):
@@ -65,7 +71,43 @@ class VerifyOutputTests(unittest.TestCase):
         self.assertEqual(json.loads(text)["status"], "preflight_failed")
 
     def test_remote_control_characters_cannot_restyle_terminal(self):
-        _, text = self.invoke([{"name": "engine\x1b[2J", "status": "fail", "detail": "Bad\rPASS\x1b[32m"}], format="text")
+        _, text = self.invoke([{"name": "engine\x1b[2J\u202e", "status": "fail", "detail": "Bad\rPASS\x1b[32m"}], format="text")
         self.assertNotIn("\x1b", text)
         self.assertNotIn("\r", text)
+        self.assertNotIn("\u202e", text)
         self.assertIn("FAIL", text)
+
+    def test_optional_producer_stays_visible_beside_required_producer(self):
+        gaps = verification_coverage({"metrics": [
+            {"name": "engine", "required": [{"metric": "queue_depth"}]},
+            {"name": "gateway", "required": []},
+        ]})
+        names = {gap["name"] for gap in gaps}
+        self.assertIn("metric_requirements:gateway", names)
+        self.assertNotIn("metric_requirements:engine", names)
+
+    def test_display_failure_preserves_checks_and_exit_status(self):
+        for status, expected in (("pass", 0), ("fail", 2)):
+            checks = [{"name": "model", "status": status}]
+            with self.subTest(status=status), patch("bench.cli.format_verification", side_effect=KeyError("shape")), \
+                    contextlib.redirect_stderr(io.StringIO()) as errors:
+                code, text = self.invoke(checks, Terminal())
+            self.assertEqual(code, expected)
+            self.assertEqual(json.loads(text)["checks"], checks)
+            self.assertIn("showing JSON", errors.getvalue())
+
+    def test_slow_read_is_visible_without_trailing_padding(self):
+        _, text = self.invoke([{"name": "model", "status": "pass", "attempts": 3}], format="text")
+        self.assertIn("3 read attempts", text)
+        self.assertTrue(all(line == line.rstrip() for line in text.splitlines()))
+
+    def test_empty_no_color_does_not_disable_terminal_color(self):
+        _, text = self.invoke([{"name": "model", "status": "pass"}], Terminal(), env={"NO_COLOR": ""})
+        self.assertIn("\x1b[32mPASS", text)
+
+    def test_ascii_terminal_falls_back_to_readable_json(self):
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            code, text = self.invoke([{"name": "runtime", "status": "pass"}], AsciiTerminal())
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(text)["status"], "ready_for_smoke")
+        self.assertIn("UnicodeEncodeError", errors.getvalue())

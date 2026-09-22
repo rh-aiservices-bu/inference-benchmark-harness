@@ -24,8 +24,10 @@ def verification_coverage(config):
         gaps.append(("routing", "Not configured; gateway, pool and objective bindings are unverified."))
     if not config.get("metrics"):
         gaps.append(("server_metrics", "No producers configured; server metrics will not be collected."))
-    elif not any(producer.get("required") for producer in config["metrics"]):
-        gaps.append(("metric_requirements", "No required series configured; missing server evidence will not block acceptance."))
+    for producer in config.get("metrics", []):
+        if not producer.get("required"):
+            gaps.append((f"metric_requirements:{producer['name']}",
+                         "No required series configured; missing evidence from this producer will not block acceptance."))
     return [{"name": name, "status": "unverified", "detail": detail} for name, detail in gaps]
 
 
@@ -35,11 +37,10 @@ def format_verification(result, color=False):
 
     def clean(value):
         # Endpoint output is untrusted: do not let control characters style the terminal.
-        return re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", str(value))
+        return re.sub(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]", " ", str(value))
 
     rows = result["checks"] + result["coverage"]
     names = [clean(f"{c['namespace']}/{c['name']}" if c.get("namespace") else c["name"]) for c in rows]
-    width = min(max((len(name) for name in names), default=5), 36)
     lines = [f"Verification · {result['reported']['timestamp_utc']}", ""]
     for check, name in zip(rows, names):
         label, code = styles.get(check["status"], ("WARN", 33))
@@ -54,7 +55,9 @@ def format_verification(result, color=False):
             details.insert(0, f"{len(check['metric_names'])} metric names discovered")
         if check.get("missing"):
             details.append("Missing: " + ", ".join(clean(item["metric"]) for item in check["missing"]))
-        lines.append(f"{tag}  {name:<{width}}")
+        if check.get("attempts", 1) > 1:
+            details.append(f"{check['attempts']} read attempts")
+        lines.append(f"{tag}  {name}")
         lines.extend(textwrap.wrap(". ".join(details), width=100, initial_indent="      ", subsequent_indent="      "))
     failed = result["status"] == "preflight_failed"
     lines.extend(["", "BLOCKED — resolve FAIL checks, then run verify again." if failed else
@@ -169,7 +172,12 @@ def main():
                 result = campaign(config, args.run, args.aiperf, args.resume, config_acquisition=acquired)
         result = {**result, "reported": timestamp()}
         if args.action == "verify" and (args.format == "text" or args.format == "auto" and sys.stdout.isatty()):
-            print(format_verification(result, color=sys.stdout.isatty() and "NO_COLOR" not in os.environ))
+            try:
+                print(format_verification(result, color=sys.stdout.isatty() and not os.environ.get("NO_COLOR")))
+            except (KeyError, TypeError, ValueError) as exc:
+                # A presentation failure must not discard completed checks or change their outcome.
+                print(f"Text display failed ({type(exc).__name__}); showing JSON.", file=sys.stderr)
+                print(json.dumps(result, indent=2))
         else:
             print(json.dumps(result, indent=2))
         return 0 if result.get("status", "complete") in ("complete", "ready_for_smoke", "plan_only", "pause_requested", "configured") else 2
