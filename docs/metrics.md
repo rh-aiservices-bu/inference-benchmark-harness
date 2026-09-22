@@ -82,19 +82,49 @@ The model labels in these definitions are `model_name` and `target_model_name`. 
 | `llm_d_epp_flow_control_queue_bytes` | Gauge / bytes | Same as queue size | Memory held in the flow-control queue |
 | `llm_d_epp_flow_control_request_queue_duration_seconds` | Histogram / seconds | `fairness_id`, `priority`, `outcome`, `inference_pool`, model labels | Time from enqueue to final flow-control outcome |
 | `llm_d_epp_flow_control_pool_saturation` | Gauge / detector signal | `inference_pool` | Dispatch gate signal. Not GPU utilization |
+| `llm_d_epp_flow_control_stale_endpoints` | Gauge / endpoints | `detector` | Candidate endpoints with missing or stale metrics at the latest utilization-detector evaluation |
 | `llm_d_epp_flow_control_requests_total` | Counter / requests | `outcome`, `priority`, `inference_pool` | Flow-control outcomes. Inspect actual outcome values |
 | `llm_d_epp_request_total` | Counter / requests | Model labels, `fairness_id`, `priority` | Router requests by class |
 | `llm_d_epp_request_ttft_seconds` | Histogram / seconds | Model labels, `fairness_id`, `priority`, `streaming` | Router-observed first-token timing |
 
-A saturation value of 1 is the declared gating set point in this router version. An empty pool can also report 1. Interpret it with endpoint readiness and the effective detector configuration. Queueing alone does not prove eviction, priority protection or fair service.
+A saturation value of 1 is the declared gating set point in this router version. An empty pool can also report 1. The utilization detector treats endpoints with missing or stale metrics as saturated. Inspect `llm_d_epp_flow_control_stale_endpoints`, readiness and detector configuration before attributing a dispatch stall to overload. Queueing alone does not prove eviction, priority protection or fair service.
 
 Prometheus classic histograms expose `_bucket`, `_sum` and `_count` series. Buckets include `le`. Keep those components and their dimensions for percentile queries. AIPerf's parsed server exports may normalize counter names by removing `_total`. The raw scrape name and the parsed key are not necessarily identical. New Relic can transform the representation again.
 
 [Router definitions at v0.10.0](https://github.com/llm-d/llm-d-router/blob/v0.10.0/pkg/epp/metrics/llm_d_router_metrics.go)
 
+## Scheduler and telemetry health
+
+These names are defined in router v0.10.0. Record the deployed build and confirm the live scrape before requiring them. Scheduler-visible endpoints can differ from pod and GPU counts.
+
+| Source metric | Type / unit | Declared labels | Use |
+|---|---|---|---|
+| `llm_d_epp_ready_endpoints` | Gauge / endpoints | `name` | Compare scheduler readiness with the expected serving topology |
+| `llm_d_epp_scheduler_attempts_total` | Counter / attempts | `status`, `target_model_name`, `endpoint_name`, `namespace`, `port` | Inspect scheduling outcomes and endpoint distribution. Attempts are not completed requests |
+| `llm_d_epp_scheduler_e2e_duration_seconds` | Histogram / seconds | None | Scheduling latency, separate from admission wait and client TTFT |
+| `llm_d_epp_plugin_duration_seconds` | Histogram / seconds | `extension_point`, `plugin_type`, `plugin_name` | Identify expensive plugin execution when comparing filters or scorers |
+| `llm_d_epp_inflight_requests` | Gauge / requests | `endpoint_name`, `namespace`, `producer_name`, `fairness_id`, `priority` | Check per-endpoint, per-class occupancy when an in-flight load producer is configured |
+| `llm_d_epp_inflight_tokens` | Gauge / tokens | Same as in-flight requests | Check token accounting: uncached prompt tokens, optionally plus estimated output. Not measured token throughput |
+| `llm_d_epp_datalayer_poll_errors_total` | Counter / errors | `source_type` | Inspect increases in data-source read failures during the run |
+| `llm_d_epp_datalayer_extract_errors_total` | Counter / errors | `source_type`, `extractor_type` | Inspect increases in metric extraction failures during the run |
+| `llm_d_epp_info` | Gauge / build metadata | `commit`, `build_ref` | Record which router build produced the observations |
+
+For replica comparisons, retain per-endpoint engine signals. The following scheduler views help diagnose imbalance; pool averages alone can hide it.
+
+| Source metrics | Type / unit | Declared labels | Use |
+|---|---|---|---|
+| `llm_d_epp_per_endpoint_queue_size` | Gauge / requests | `name`, `model_server_endpoint` | Locate engine queue pressure by endpoint. Separate from the admission queue |
+| `llm_d_epp_average_queue_size`, `llm_d_epp_std_dev_queue_size` | Gauges / requests | `name` | Pool engine-queue level and spread |
+| `llm_d_epp_average_running_requests`, `llm_d_epp_std_dev_running_requests` | Gauges / requests | `name` | Pool running-request level and spread |
+| `llm_d_epp_average_kv_cache_utilization`, `llm_d_epp_std_dev_kv_cache_utilization` | Gauges / engine utilization scale | `name` | Pool cache-use level and spread. Confirm the producer's scale before converting to percent |
+
+Require only the signals needed for the experiment. In-flight accounting depends on its configured producer. Cache, disaggregation and encoder diagnostics depend on their plugins; use the [scheduler observability catalog](https://github.com/llm-d/llm-d/blob/1e9a86a3a9da228df3d734a1e5bd8a7253fc9ea4/docs/architecture/core/router/epp/scheduling.md#metrics--observability) to select them, then check matching-version definitions. Approximate cache-index matches do not prove actual engine cache hits. Error counters may appear only after an error; absence alone does not establish zero errors.
+
+Sources: [router metrics v0.10.0](https://github.com/llm-d/llm-d-router/blob/71f4f0999f95b96c49a9d0c4afbd18dfdb943c26/pkg/epp/metrics/llm_d_router_metrics.go), [in-flight producer v0.10.0](https://github.com/llm-d/llm-d-router/blob/71f4f0999f95b96c49a9d0c4afbd18dfdb943c26/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go).
+
 ## Collection and New Relic
 
-AIPerf scrapes the configured Prometheus-format producer URLs directly. A Prometheus database is optional. `verify` prints discovered names and missing requirements. It checks names, not label attribution or semantic equivalence. Required metrics need valid exported samples and endpoint fetch coverage spanning the request window. The pinned exporter normalizes counter and histogram names. The validator uses their exported types. This does not prove uninterrupted per-metric availability or correct labels. An unchanged metric is not a failed scrape.
+AIPerf scrapes the configured Prometheus-format producer URLs directly. A Prometheus database is optional. `verify` prints discovered names and missing requirements. It checks names, not label attribution or semantic equivalence. Required metrics need valid exported samples and endpoint fetch coverage spanning the request window. The pinned exporter normalizes counter and histogram names. The validator uses their exported types. This does not prove uninterrupted per-metric availability or correct labels. An unchanged metric is not a failed scrape. `metrics[].required[]` accepts `metric` and `why`; it does not define server-value thresholds or label predicates. Readiness comparisons, stale-endpoint counts, error-counter increases and class attribution require analysis; collecting a metric does not automatically enforce those conditions.
 
 ```json
 "metrics": [{
