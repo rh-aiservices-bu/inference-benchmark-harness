@@ -49,9 +49,12 @@ class ContractTests(unittest.TestCase):
         self.assertFalse((self.root / "unused").exists())
 
     def test_report_exit_code_matches_campaign_status(self):
+        run = self.root / "run"
+        with patch("bench.runner.verify", return_value=[]), patch("bench.runner.run_child", side_effect=self.fixture):
+            state = campaign(self.config, run, "aiperf")
         for status, code in (("complete", 0), ("preflight_failed", 2), ("evidence_invalid", 2), ("goal_not_met", 2)):
-            write_json(self.root / "state.json", {"status": status})
-            result = subprocess.run([sys.executable, "-m", "bench", "report", "--run", str(self.root)],
+            write_json(run / "state.json", {**state, "status": status})
+            result = subprocess.run([sys.executable, "-m", "bench", "report", "--run", str(run)],
                                     cwd=ROOT, capture_output=True, text=True)
             self.assertEqual(result.returncode, code)
             self.assertEqual(json.loads(result.stdout)["status"], status)

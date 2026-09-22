@@ -25,7 +25,7 @@ For each experiment decision, name the metric, statistic and unit.
 | Decision | Exact measurement | Where to read it |
 |---|---|---|
 | How long before the answer starts? | `time_to_first_token.p95`, ms | Native aggregate. Harness alias `ttft_p95_ms` |
-| Does the stream pause? | `inter_token_latency.p95`, ms | Native aggregate if exported. No V1 goal or summary alias |
+| How fast does each response generate tokens? | `inter_token_latency.p95`, ms | Native aggregate if exported; report alias `itl_p95_ms`. No V1 goal |
 | How long until the answer finishes? | `request_latency.p95`, ms | Native aggregate. Harness alias `latency_p95_ms` |
 | How many requests complete per second? | `request_throughput.avg`, requests/s | Native aggregate. Harness alias `request_throughput_rps` |
 | How much traffic fails? | Failed records / all request records, fraction | Harness `error_fraction`. Show numerator and denominator |
@@ -33,6 +33,8 @@ For each experiment decision, name the metric, statistic and unit.
 Use first-token and inter-token timing for interactive streaming. Add full-request duration when completion time is the question. Keep output lengths comparable. Missing measurements are unknown, not zero. These statistics are per repeat. Their variation is not a pooled percentile or confidence interval.
 
 Report errors separately from successful-request latency. Keep native records and token counts so differences in request shape remain visible.
+
+AIPerf 0.12.0 computes ITL once per request as `(request_latency - time_to_first_token) / (output_sequence_length - 1)`, when at least two tokens are available. Its p95 describes those per-request averages, not the p95 of individual streaming gaps. Use chunk timing records when investigating pauses. [Pinned implementation](https://github.com/ai-dynamo/aiperf/blob/v0.12.0/src/aiperf/metrics/types/inter_token_latency_metric.py).
 
 ## Mixed-repeat evidence
 

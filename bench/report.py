@@ -9,7 +9,7 @@ import re
 
 from .provenance import timestamp
 
-ATTEMPT = re.compile(r"^(point|row)-(\d+)(?:-repeat-\d+)?-attempt-\d+$")
+ATTEMPT = re.compile(r"^(point|row)-(\d+)(?:-repeat-(\d+))?-attempt-\d+$")
 METRICS = ("ttft_p95_ms", "latency_p95_ms", "request_throughput_rps")
 NATIVE_METRICS = (
     ("inter_token_latency", "p95", "ms", "itl_p95_ms"),
@@ -26,7 +26,10 @@ def clean(value):
 
 
 def number(value):
-    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    try:
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    except OverflowError:
+        return False
 
 
 def span(values):
@@ -34,31 +37,37 @@ def span(values):
     if not known:
         return "unknown"
     lo, hi = min(known), max(known)
-    text = f"{lo:.3g}" if lo == hi else f"{lo:.3g}–{hi:.3g}"
+    def display(value):
+        # Preserve ordinary token counts and millisecond values without exponent notation.
+        return f"{value:,.3f}".rstrip("0").rstrip(".") if .001 <= value < 1e9 else f"{value:.3g}"
+    low, high = display(lo), display(hi)
+    text = low if low == high else f"{low}–{high}"
     return text if len(known) == len(values) else text + " (partial)"
 
 
 def read_report(root):
-    root = Path(root)
+    root = Path(root).resolve()
     if not root.is_dir():
         raise ValueError("Saved run directory not found. Set RUN to an existing benchmark directory.")
     issues = []
 
     def read(path, expected=dict, required=True):
-        if not required and not path.exists():
-            return expected()
         try:
+            if not path.resolve().is_relative_to(root):
+                raise ValueError("Artifact points outside the run directory")
+            if not required and not path.exists():
+                return expected()
             value = json.loads(path.read_text())
             if not isinstance(value, expected):
                 raise ValueError("Unexpected shape")
             return value
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             # Exception strings can contain endpoint responses, credentials or private paths.
-            issues.append(f"{clean(path.relative_to(root))}: missing, unreadable or malformed")
+            issues.append(f"{clean(path.relative_to(root))}: missing, unreadable or malformed (including external artifact paths)")
             return expected()
 
     state = read(root / "state.json")
-    config = read(root / "config.json", required=False)
+    config = read(root / "config.json")
     result = {"state": state, "status": state.get("status", "unknown"), "attempts": {}, "points": {}}
     matrix = state.get("kind") == "matrix" or isinstance(config.get("rows"), list)
     if matrix:
@@ -70,29 +79,54 @@ def read_report(root):
     if len(set(completed)) != len(completed):
         issues.append("state.json: duplicate completed attempts")
     accepted = set(completed)
+    slots = {name: (int(ATTEMPT.fullmatch(name)[2]), int(ATTEMPT.fullmatch(name)[3] or 1)) for name in accepted}
+    slot_counts = Counter(slots.values())
+    load = config.get("load", {})
+    repeats = config.get("repeats") if matrix else load.get("repeats", 1) if isinstance(load, dict) else None
+    expected_count = planned(config, matrix)
+    for name, (point, repeat) in slots.items():
+        wrong_slot = point < 1 or repeat < 1 or ATTEMPT.fullmatch(name)[1] != ("row" if matrix else "point")
+        if type(expected_count) is int and type(repeats) is int:
+            wrong_slot |= point > expected_count // repeats or repeat > repeats
+        if wrong_slot or slot_counts[(point, repeat)] > 1:
+            issues.append(f"{name}: duplicate or out-of-range repeat slot")
+            accepted.remove(name)
+    if state.get("status") == "complete" and type(expected_count) is int and len(accepted) != expected_count:
+        issues.append("state.json: complete status disagrees with planned repeat count")
     directories = sorted(p for p in root.iterdir() if p.is_dir() and ATTEMPT.fullmatch(p.name))
     existing = {p.name for p in directories}
     for name in sorted(accepted - existing):
         issues.append(f"{name}: accepted attempt directory missing")
     rows, notices, windows = {}, Counter(), []
-    unaccepted = 0
+    unaccepted, usable = 0, 0
     goal_counts = Counter()
     for directory in directories:
         match = ATTEMPT.fullmatch(directory.name)
         point = int(match[2])
         group = read(directory / "summary.json")
         result["groups" if matrix else "attempts"][directory.name] = group
+        streams = group.get("streams", {}) if matrix else {"workload": group}
         is_accepted = directory.name in accepted and group.get("evidence") == "complete"
+        if matrix and is_accepted:
+            # A checkpoint accepts the whole mixed repeat, never one successful peer.
+            coherent = (isinstance(streams, dict) and bool(streams)
+                        and all(isinstance(s, dict) and s.get("evidence") == "complete" for s in streams.values()))
+            expected = row_config(config, point).get("streams")
+            if isinstance(expected, dict) and isinstance(streams, dict):
+                coherent = coherent and set(streams) == set(expected)
+            if not coherent:
+                issues.append(f"{directory.name}: accepted group has missing or incomplete stream evidence")
+                is_accepted = False
         if directory.name in accepted and not is_accepted:
             issues.append(f"{directory.name}: checkpoint references incomplete evidence")
         scope_note = "accepted repeat" if is_accepted else "unaccepted attempt"
+        usable += int(is_accepted)
         if not is_accepted:
             unaccepted += 1
             reasons = group.get("reasons", [])
             if isinstance(reasons, list):
                 for reason in reasons:
                     notices[f"{clean(reason)} (unaccepted attempt)"] += 1
-        streams = group.get("streams", {}) if matrix else {"workload": group}
         if not isinstance(streams, dict):
             issues.append(f"{directory.name}: malformed streams")
             continue
@@ -124,9 +158,6 @@ def read_report(root):
                     detail = ", ".join(clean(v) for v in missing) if isinstance(missing, list) else "unknown"
                     notices[f"{clean(producer.get('producer', 'producer'))}: collection incomplete" +
                             (f"; missing {detail}" if detail else "") + f" ({scope_note})"] += 1
-            if matrix and is_accepted and summary.get("evidence") != "complete":
-                issues.append(f"{directory.name}: accepted group has incomplete stream evidence")
-                continue
             scope = "full run" if is_accepted else "unaccepted"
             # Display-only enrichment must not change the saved validation summary.
             observation = {**summary, "native_metrics": {}}
@@ -165,9 +196,12 @@ def read_report(root):
                 except (KeyError, TypeError, ValueError):
                     notices["Native run window unavailable"] += 1
         shared = group.get("shared_window", {})
-        if matrix and is_accepted and len(streams) > 1 and isinstance(shared, dict):
-            for stream, summary in shared.items():
-                if isinstance(summary, dict):
+        if matrix and is_accepted and len(streams) > 1:
+            if (not isinstance(shared, dict) or set(shared) != set(streams)
+                    or any(not isinstance(s, dict) for s in shared.values())):
+                issues.append(f"{directory.name}: missing or malformed shared-arrival evidence")
+            for stream, summary in (shared.items() if isinstance(shared, dict) else []):
+                if stream in streams and isinstance(summary, dict):
                     rows.setdefault((point, clean(stream), "shared arrivals"), []).append(summary)
                     for goal in summary.get("goals", []) if isinstance(summary.get("goals", []), list) else []:
                         if isinstance(goal, dict):
@@ -178,6 +212,7 @@ def read_report(root):
     if read(root / "state.json") != state:
         issues.append("Checkpoint changed while reading; regenerate the report")
     result["report_issues"] = sorted(set(issues))
+    result["usable_checkpointed_repeats"] = usable
     result["reported"] = timestamp()
     return result, config, rows, notices, goal_counts, windows, unaccepted
 
@@ -185,15 +220,28 @@ def read_report(root):
 def planned(config, matrix):
     try:
         if matrix:
-            return len(config["rows"]) * config["repeats"]
-        load = config["load"]
-        return len(load.get("rates", load.get("concurrency", []))) * load.get("repeats", 1)
+            points, repeats = config["rows"], config["repeats"]
+        else:
+            load = config["load"]
+            points, repeats = load.get("rates", load.get("concurrency")), load.get("repeats", 1)
+        if isinstance(points, list) and points and type(repeats) is int and repeats > 0:
+            return len(points) * repeats
     except (KeyError, TypeError, AttributeError):
-        return "unknown"
+        pass
+    return "unknown"
+
+
+def row_config(config, point):
+    rows = config.get("rows")
+    if isinstance(rows, list) and 1 <= point <= len(rows) and isinstance(rows[point - 1], dict):
+        return rows[point - 1]
+    return {}
 
 
 def load_label(config, point, stream, matrix):
     try:
+        if point < 1:
+            return "unknown"
         if matrix:
             load = config["rows"][point - 1]["streams"][stream]["load"]
             value = load.get("rates", load.get("concurrency"))[0]
@@ -202,21 +250,59 @@ def load_label(config, point, stream, matrix):
             value = load.get("rates", load.get("concurrency"))[point - 1]
         if not number(value):
             return "unknown"
-        return f"{value:g} req/s" if "rates" in load else f"{value:g} concurrent"
+        if "rates" in load:
+            cap = load.get("max_concurrency")
+            return (f"{value:g} req/s ({clean(load.get('arrival', 'unknown'))}; "
+                    f"cap {cap:g})" if number(cap) else f"{value:g} req/s (cap unknown)")
+        return f"{value:g} concurrent"
     except (KeyError, TypeError, IndexError, AttributeError):
         return "unknown"
+
+
+def goal_table(rows):
+    lines = []
+    for (point, stream, scope), summaries in sorted(rows.items()):
+        goals = {}
+        for summary in summaries:
+            entries = summary.get("goals", [])
+            for goal in entries if isinstance(entries, list) else []:
+                if isinstance(goal, dict) and isinstance(goal.get("goal"), str):
+                    goals.setdefault(clean(goal["goal"]), []).append(goal)
+        for name, values in sorted(goals.items()):
+            statuses = Counter(clean(g.get("status", "unverified")) for g in values)
+            status = ", ".join(f"{n} {s}" for s, n in sorted(statuses.items()))
+            lines.append(f"| {point} | {stream} | {scope} | {name} | "
+                         f"{span([g.get('limit') for g in values])} | {span([g.get('observed') for g in values])} | {status} |")
+    if not lines:
+        return []
+    return ["", "## Goal evaluations", "",
+            "| Point/row | Workload | Scope | Metric | Limit (≤) | Observed | Evaluations |",
+            "|---|---|---|---|---:|---:|---|", *lines, "",
+            "Latency goals use ms; max_error_fraction is failed/total requests (0–1). Unaccepted evaluations do not establish a pass."]
 
 
 def format_report(data):
     result, config, rows, notices, goals, windows, unaccepted = data
     state = result["state"]
     matrix = "groups" in result
-    completed = state.get("completed")
-    count = len(set(v for v in completed if isinstance(v, str))) if isinstance(completed, list) else "unknown"
+    count = result["usable_checkpointed_repeats"]
     lines = ["# Benchmark report", "", f"Generated: {result['reported']['timestamp_utc']}",
              f"Saved status: {clean(result['status'])}",
              f"Progress: {count}/{planned(config, matrix)} checkpointed repeats; {unaccepted} unaccepted attempts",
              "Coverage: partial report" if result["report_issues"] else "Coverage: saved summaries read", ""]
+    digest = state.get("config_hash")
+    if isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+        lines.append(f"Saved configuration SHA-256: {digest}")
+    if matrix:
+        lines += [f"Campaign: {clean(config.get('name', 'unknown'))}", "", "## Experiment", "",
+                  "| Row | Stage | Serving profile | Question | Change |",
+                  "|---:|---|---|---|---|"]
+        for point in sorted({key[0] for key in rows}):
+            row = row_config(config, point)
+            lines.append(f"| {point} | {clean(row.get('stage', 'unknown'))} | "
+                         f"{clean(row.get('profile') or 'not recorded')} | "
+                         f"{clean(row.get('question', 'unknown'))} | {clean(row.get('change', 'unknown'))} |")
+        lines.append("")
     workload = config.get("workload", {})
     if not matrix and isinstance(workload, dict):
         inp, out = workload.get("input_tokens"), workload.get("output_tokens")
@@ -255,6 +341,7 @@ def format_report(data):
             lines.append(f"| {point} | {stream} | {scope} | " + " | ".join(values) + " |")
         lines += ["", "Native AIPerf full-run statistics; ranges span repeats. ITL is inter-token latency. Token lengths are observed means, not requested limits. Duration is the native benchmark duration.",
                   "Cache-hit rate and server queue statistics are not calculated. Check serving metrics over the same run windows."]
+    lines += goal_table(rows)
     lines += ["", "## Checks", ""]
     lines.append("Goals: " + (", ".join(f"{n} {status}" for status, n in sorted(goals.items())) if goals else "none evaluated"))
     lines.extend(f"- {item} [{n} checks]" for item, n in sorted(notices.items()))

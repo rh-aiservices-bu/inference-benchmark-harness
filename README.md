@@ -139,6 +139,8 @@ Every stream uses the same verify/smoke preparation before coordinated load.
 
 `make report RUN=results/benchmark` summarizes saved results without sending requests. It shows checkpointed repeats, load, per-run p95 TTFT and request latency, completed requests/s, failed/total requests, goal outcomes and collection gaps. A second table shows native p95 inter-token latency, output tokens/s, observed mean input/output lengths and duration. Ranges compare runs; they are not pooled percentiles. Unaccepted observations are listed separately.
 
+`RUN` is a harness campaign directory containing `state.json` and `config.json`, not a standalone AIPerf export folder. Matrix reports include the recorded stage, question, change and serving-profile label. Goal evaluations show their thresholds and observed values.
+
 ```sh
 make -s report RUN=results/benchmark > summary.md
 make -s report RUN=results/benchmark FORMAT=json > report.json

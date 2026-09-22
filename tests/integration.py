@@ -131,6 +131,17 @@ def main():
                         assert 0 < duration_requests < 100
                     else:
                         assert summary["requests"] == 3
+                if case == "generated":
+                    report = subprocess.run([sys.executable, "-m", "bench", "report", "--run", str(run)],
+                                            cwd=ROOT, capture_output=True, text=True, timeout=30)
+                    assert report.returncode == 0, report.stdout + report.stderr
+                    native_metrics = json.loads(report.stdout)["native_metrics"]
+                    expected = {"itl_p95_ms", "output_tokens_per_second", "input_tokens_mean",
+                                "output_tokens_mean", "duration_seconds"}
+                    for attempt in state["completed"]:
+                        observed = native_metrics[attempt]["workload"]
+                        assert set(observed) == expected, observed
+                        assert observed["input_tokens_mean"] > 0 and observed["duration_seconds"] > 0, observed
             else:
                 assert result.returncode != 0
                 assert len(list(run.glob("point-*"))) == 1
