@@ -246,6 +246,8 @@ The client inherits the campaign lock. Do not delete a lock file to bypass owner
 
 ## Debugging
 
+For an empty cache panel, use the [cache metric mapping and checklist](metrics.md#cache-metrics-by-producer) before changing the query or serving configuration.
+
 Run `make verify CONFIG=/path/to/benchmark.json`. It reads configured targets without inference and prints named checks, discovered `metric_names`, and any `missing` requirements. Save its JSON output with your run notes. There is no separate `debug` command.
 
 
