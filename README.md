@@ -26,6 +26,7 @@ The operator chooses the next experiment and changes serving settings. The harne
 | Understand the shared-GPU business case and prior experiments | [Alexa's decision guide](https://alexagriffith.github.io/flow-control-benchmarks/benchmark-decision-map/) and [benchmark repository](https://github.com/alexagriffith/flow-control-benchmarks) cover experiment choices, prior results and their evidence limits |
 | View benchmark progress or replay an experiment | [Flow Control Visualizer & Dashboard repository](https://github.com/alexagriffith/flow-control-visualizer). The [progress dashboard](https://github.com/alexagriffith/flow-control-visualizer#follow-a-benchmark) reads AIPerf outputs and harness checkpoints; animated replay requires [compatible CSV artifacts](docs/operator-guide.md#viewer-inputs). Both views are read-only |
 | Understand or configure the serving stack | [llm-d](https://github.com/llm-d/llm-d), [documentation](https://llm-d.ai/docs) and [router / flow control](https://github.com/llm-d/llm-d-router) |
+| Diagnose missing cache metrics or an empty panel | [Cache metric sources](docs/metrics.md#cache-metrics-by-producer) and [empty-panel checks](docs/metrics.md#empty-cache-panel-checklist) distinguish router predictions, index activity and engine reuse |
 
 ## Install and configure
 
