@@ -124,6 +124,46 @@ Require only the signals needed for the experiment. In-flight accounting depends
 
 Sources: [router metrics v0.10.0](https://github.com/llm-d/llm-d-router/blob/71f4f0999f95b96c49a9d0c4afbd18dfdb943c26/pkg/epp/metrics/llm_d_router_metrics.go), [in-flight producer v0.10.0](https://github.com/llm-d/llm-d-router/blob/71f4f0999f95b96c49a9d0c4afbd18dfdb943c26/pkg/epp/framework/plugins/requestcontrol/dataproducer/inflightload/metrics.go).
 
+## Cache metrics by producer
+
+Cache predictions, index activity and engine reuse answer different questions. Select metrics from the deployed implementation, not from the plugin instance name. In routing YAML, `type` selects the implementation; `name` identifies the instance used by other plugins. A misleading name does not change its type. Renaming an instance also requires updating its references.
+
+The plugin examples below were checked at router commit `166b75847dd609378efbb05d17f9068d174c967a`; they supplement the v0.10.0 reference above. Shared prediction and affinity-decision metrics below were checked in merged PRs #2897 and #2494. Custom images and other releases may export different names. Confirm the image's source revision and raw `/metrics` output before copying a query.
+
+| Question | Producer and example metrics | Interpretation |
+|---|---|---|
+| What prefix match does the router predict? | `approx-prefix-cache-producer`: `llm_d_epp_prefix_indexer_hit_ratio`, `llm_d_epp_prefix_indexer_hit_bytes`, `llm_d_epp_prefix_indexer_size` | Approximate index matches, not engine token reuse. These definitions carry `plugin_name` and `plugin_type`. A byte-match ratio is not a token-hit ratio |
+| What token reuse is predicted for the selected endpoint? | Builds containing [#2897](https://github.com/llm-d/llm-d-router/pull/2897): both approximate and precise producers emit `llm_d_epp_prefix_predicted_cached_tokens` and `llm_d_epp_prefix_prompt_tokens` | Divide matching-window `_sum` rates for the same plugin instance. Both observations cover the same requests; response input tokens are a different population. These metrics are not exclusive to the approximate producer |
+| Did the affinity filter retain cache-matching candidates? | Builds containing [#2494](https://github.com/llm-d/llm-d-router/pull/2494): `llm_d_epp_prefix_cache_affinity_filter_decisions_total`, by `plugin_name` and `outcome` | `sticky` retains matching candidates; `no_match` finds none above the threshold; `load_override` reopens the candidate set because of the predicted first-token delay penalty. An override permits another endpoint; it does not prove one was selected |
+| Is the precise index being queried? | `precise-prefix-cache-producer` uses the KV-block index. With index instrumentation enabled: `llm_d_router_epp_kv_cache_index_lookup_requests_total`, `llm_d_router_epp_kv_cache_index_lookup_hits_total`, `llm_d_router_epp_kv_cache_index_max_pod_hit_count_total` | Lookup calls and matched blocks. The inspected source uses the `llm_d_router_epp_` prefix and also emits legacy aliases. Discover the deployed names; do not assume an `llm_d_epp_` spelling or divide block hits by lookup calls and label it a token-hit fraction |
+| How much input did the engine report reading from cache? | Endpoint Picker response metrics: `llm_d_epp_request_cached_tokens` and `llm_d_epp_request_input_tokens` | Model-server usage reported in responses, observed by the router. Cached-token observations require prompt-token details. These metrics have model, `fairness_id` and `priority` labels, not `plugin_name` |
+| How much cache reuse did the engine record? | vLLM: `vllm:prefix_cache_hits_total` and `vllm:prefix_cache_queries_total` | Use matching-window counter increases and verify units in the deployed engine. This population need not equal the router's response-usage population |
+
+With separate prefill and decode, first identify which stage each prediction and usage observation describes. Router response usage may describe decode while the reuse of interest occurs on prefill. Use prefill-engine cache counters for prefill reuse and do not compare different stages as prediction error. Custom snapshot indexes also need instrumentation on the index used by routing; counters on an unused index remain zero even while routing works.
+
+For classic histograms, a **reported cached input-token fraction** uses cached-token `_sum` divided by input-token `_sum`, with rates over the same window. Filter both sides to the same model and producer set. For example, after confirming these labels exist:
+
+```promql
+sum(rate(llm_d_epp_request_cached_tokens_sum{namespace=~"$namespace", pod=~"$epp_pod", model_name=~"$model"}[$__rate_interval]))
+/
+sum(rate(llm_d_epp_request_input_tokens_sum{namespace=~"$namespace", pod=~"$epp_pod", model_name=~"$model"}[$__rate_interval]))
+```
+
+Check response usage and the corresponding `_count` increases for coverage. Input observations without cached-token details must not silently count as zero reuse. No input traffic, missing series or incomplete coverage means unknown. Multiply by 100 only when displaying a percentage. A cumulative ratio since process start differs from this recent-window ratio. Neither ratio alone proves that cache-aware routing helped. `make report` does not calculate these ratios.
+
+Sources: [approximate metrics](https://github.com/llm-d/llm-d-router/blob/166b75847dd609378efbb05d17f9068d174c967a/pkg/epp/framework/plugins/requestcontrol/dataproducer/approximateprefix/metrics.go), [precise producer](https://github.com/llm-d/llm-d-router/blob/166b75847dd609378efbb05d17f9068d174c967a/pkg/epp/framework/plugins/requestcontrol/dataproducer/preciseprefixcache/producer.go), [index instrumentation](https://github.com/llm-d/llm-d-router/blob/166b75847dd609378efbb05d17f9068d174c967a/pkg/kvcache/kvblock/instrumented_index.go), [KV metric names](https://github.com/llm-d/llm-d-router/blob/166b75847dd609378efbb05d17f9068d174c967a/pkg/kvcache/metrics/collector.go), [response usage](https://github.com/llm-d/llm-d-router/blob/166b75847dd609378efbb05d17f9068d174c967a/pkg/epp/handlers/response.go).
+
+### Empty cache panel checklist
+
+1. **Read the producer directly.** Compare the query with raw `/metrics` from the intended pod. A metric absent there cannot be collected from that pod. A PodMonitor proves configuration, not successful scraping; check target health separately.
+2. **Match the plugin and build.** Inspect the loaded plugin `type`, instance references and image source revision. Check the relevant producer's instrumentation settings. Do not change routing algorithms just to populate a panel.
+3. **Separate missing from zero.** A missing series may be unsupported, disabled or created only after an event. An exported zero is a sample, but does not establish that its code path ran. Use an authorized smoke request for request-dependent metrics; do not deliberately cause failures just to create counters.
+4. **Check lookup activity before interpreting hits.** In the linked index implementation, every instrumented lookup increments `lookup_requests_total`, even with no match. Increasing requests with zero hits means no matches were recorded. Zero requests calls for checking execution, instrumentation, early skips and the custom build first. Leadership alone does not prove a lookup ran.
+5. **Check ingestion and query filters.** If a series exists at the producer but the panel is empty, inspect scrape health, relabeling, datasource, model/pod filters and time window. Use labels actually exported by that metric.
+6. **Preserve the unanswered question.** Display unavailable predictions as unavailable. Actual engine reuse can be shown separately, but does not replace prediction evidence or diagnose routing quality on its own.
+
+`make verify` discovers names and checks configured requirements; it does not infer this plugin mapping or validate query semantics. Some series require traffic before they exist. Keep those checks explicitly unverified until an authorized smoke has triggered the relevant path, then rerun verification with the needed requirements. One successful request does not validate all plugin behavior.
+
 ## Collection and New Relic
 
 AIPerf scrapes the configured Prometheus-format producer URLs directly. A Prometheus database is optional. `verify` prints discovered names and missing requirements. It checks names, not label attribution or semantic equivalence. Required metrics need valid exported samples and endpoint fetch coverage spanning the request window. The pinned exporter normalizes counter and histogram names. The validator uses their exported types. This does not prove uninterrupted per-metric availability or correct labels. An unchanged metric is not a failed scrape. `metrics[].required[]` accepts `metric` and `why`; it does not define server-value thresholds or label predicates. Readiness comparisons, stale-endpoint counts, error-counter increases and class attribution require analysis; collecting a metric does not automatically enforce those conditions.
